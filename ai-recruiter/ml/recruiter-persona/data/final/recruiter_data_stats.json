@@ -1,0 +1,113 @@
+{
+  "input_rows": 10174,
+  "parsed_rows": 10144,
+  "filtered_out": 1545,
+  "after_filter_before_dedup": 8629,
+  "duplicates_removed": 0,
+  "kept_rows": 8629,
+  "keep_rate_pct": 84.81,
+  "train_rows": 7749,
+  "eval_rows": 880,
+  "reason_counts": {
+    "technical_question_style": 908,
+    "very_short_turn": 448,
+    "too_few_turns": 169,
+    "insufficient_role_balance": 169,
+    "very_long_turn": 88,
+    "weak_behavioral_signal": 77,
+    "potentially_illegal_or_sensitive_prompt": 63,
+    "empty_conversation": 30,
+    "too_many_turns": 10,
+    "no_interviewer_question": 2
+  },
+  "decision_distribution": {
+    "reject": 4267,
+    "select": 4362
+  },
+  "top_roles": [
+    [
+      "Product Manager",
+      433
+    ],
+    [
+      "Data Scientist",
+      432
+    ],
+    [
+      "Data Engineer",
+      387
+    ],
+    [
+      "Data Analyst",
+      300
+    ],
+    [
+      "UI Engineer",
+      271
+    ],
+    [
+      "product manager",
+      268
+    ],
+    [
+      "Software Engineer",
+      263
+    ],
+    [
+      "E-commerce Specialist",
+      260
+    ],
+    [
+      "data engineer",
+      258
+    ],
+    [
+      "Digital Marketing Specialist",
+      256
+    ],
+    [
+      "DevOps Engineer",
+      250
+    ],
+    [
+      "Human Resources Specialist",
+      247
+    ],
+    [
+      "Cloud Architect",
+      243
+    ],
+    [
+      "QA Engineer",
+      239
+    ],
+    [
+      "Robotics Engineer",
+      229
+    ],
+    [
+      "Content Writer",
+      229
+    ],
+    [
+      "data scientist",
+      229
+    ],
+    [
+      "Machine Learning Engineer",
+      227
+    ],
+    [
+      "Cloud Engineer",
+      220
+    ],
+    [
+      "Mobile App Developer",
+      218
+    ]
+  ],
+  "turns_min": 3,
+  "turns_median": 15,
+  "turns_max": 29,
+  "question_turns_median": 6
+}

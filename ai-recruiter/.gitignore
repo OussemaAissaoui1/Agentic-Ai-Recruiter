@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# ML Artifacts (large files)
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.gguf
+models/recruiter-persona/adapters/*/
+models/recruiter-persona/merged/
+
+# Data (large files - keep structure, ignore content)
+data/raw/**/*.csv
+data/interim/
+!data/interim/README.md
+
+# Experiments
+ml/experiments/runs/
+ml/experiments/mlflow.db
+
+# Logs
+*.log
+logs/
+
+# Temporary
+*.tmp
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db

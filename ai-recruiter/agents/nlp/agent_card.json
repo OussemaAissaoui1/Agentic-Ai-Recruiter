@@ -1,0 +1,31 @@
+{
+    "name": "nlp-agent",
+    "description": "Handles interview conversation, question generation, and semantic analysis using the fine-tuned recruiter persona model (Alex)",
+    "version": "1.0.0",
+    "protocol": "a2a/1.0",
+    "capabilities": [
+        "question_generation",
+        "response_analysis",
+        "communication_scoring"
+    ],
+    "endpoint": "http://nlp-agent:8080",
+    "tasks": [
+        {
+            "name": "generate_question",
+            "description": "Generate the next interview question based on context",
+            "input_schema": {
+                "job_role": "string",
+                "conversation_history": "array",
+                "phase": "string"
+            }
+        },
+        {
+            "name": "analyze_response",
+            "description": "Analyze candidate response for semantic content",
+            "input_schema": {
+                "response_text": "string",
+                "question_context": "string"
+            }
+        }
+    ]
+}

@@ -1,0 +1,62 @@
+[project]
+name = "ai-recruiter"
+version = "0.1.0"
+description = "AI-powered recruitment interview platform with multi-agent architecture"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+dependencies = [
+    # Core
+    "pydantic>=2.0",
+    "httpx>=0.25",
+    "redis>=5.0",
+
+    # Agent Framework
+    "langgraph>=0.0.40",
+    "langchain>=0.1",
+
+    # ML
+    "torch>=2.0",
+    "transformers>=4.36",
+    "peft>=0.7",  # LoRA/QLoRA
+    "datasets>=2.15",
+
+    # Serving
+    "vllm>=0.2",
+    "fastapi>=0.109",
+    "uvicorn>=0.25",
+
+    # Communication
+    "grpcio>=1.60",
+    "websockets>=12.0",
+
+    # Audio/Video (for Voice/Vision/Avatar agents)
+    "openai-whisper>=20231117",
+    "opencv-python>=4.8",
+
+    # Utilities
+    "structlog>=23.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.1",
+    "mypy>=1.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
