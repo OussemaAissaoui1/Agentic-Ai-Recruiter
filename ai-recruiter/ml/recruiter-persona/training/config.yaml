@@ -11,7 +11,7 @@ base_model: "meta-llama/Meta-Llama-3.1-8B-Instruct"  # Best for conversational t
 # base_model: "Qwen/Qwen2.5-7B-Instruct"            # Better role-playing
 # base_model: "meta-llama/Llama-3.2-3B-Instruct"    # Quick iteration
 
-output_dir: "./output/recruiter-persona-llama-3.1-8b"
+output_dir: "/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training/output_v2/recruiter-persona-llama-3.1-8b"
 
 # ============================================================================
 # Data Configuration
@@ -61,12 +61,12 @@ training:
   optim: "paged_adamw_8bit"      # Memory-efficient optimizer
 
   # Batch Configuration
-  per_device_train_batch_size: 1
-  per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 32  # Effective batch stays = 32
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 16  # Effective batch stays = 32
 
   # Training Duration
-  num_train_epochs: 3             # 3-4 epochs for good convergence
+  num_train_epochs: 2.5           # Best tradeoff from your logs (close to best eval at ~step 600)
   max_steps: -1                   # -1 means train for full epochs
 
   # Sequence Length
@@ -75,9 +75,9 @@ training:
 
   # Evaluation & Saving
   eval_strategy: "steps"
-  eval_steps: 200
+  eval_steps: 400
   save_strategy: "steps"
-  save_steps: 200
+  save_steps: 400
   save_total_limit: 3             # Keep only 3 best checkpoints
   load_best_model_at_end: true
   metric_for_best_model: "eval_loss"
@@ -88,10 +88,10 @@ training:
   tf32: true                      # Enable TF32 for faster training
   fp16: false                     # Use bf16 instead
   gradient_checkpointing: true    # Save memory
-  dataloader_num_workers: 4
+  dataloader_num_workers: 6
 
   # Logging
-  logging_dir: "./logs"
+  logging_dir: "/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training/output_v2/recruiter-persona-llama-3.1-8b/logs"
   logging_steps: 10
   logging_first_step: true
   report_to: "wandb"              # Options: wandb, tensorboard, none
@@ -102,7 +102,7 @@ training:
 
   # Advanced
   remove_unused_columns: true
-  group_by_length: false          # Set true if variable length conversations
+  group_by_length: true           # Improves packing efficiency and throughput
   ddp_find_unused_parameters: false
 
 # ============================================================================

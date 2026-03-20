@@ -22,6 +22,7 @@ from transformers import (
 )
 from peft import get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer
+from trl import DataCollatorForCompletionOnlyLM
 
 # Import custom modules
 from lora_config import get_qlora_config, get_lora_config, print_trainable_parameters
@@ -202,6 +203,17 @@ def main():
         enable_sample_generation=True,
     )
 
+    # 8.5 Setup assistant-only loss masking for strict recruiter generation.
+    # This trains only on assistant turns and ignores user/system text tokens.
+    response_template = "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    instruction_template = "<|start_header_id|>user<|end_header_id|>\n\n"
+    data_collator = DataCollatorForCompletionOnlyLM(
+        response_template=response_template,
+        instruction_template=instruction_template,
+        tokenizer=tokenizer,
+        mlm=False,
+    )
+
     # 9. Initialize trainer
     print("\nInitializing SFTTrainer...")
     trainer = SFTTrainer(
@@ -209,6 +221,7 @@ def main():
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        data_collator=data_collator,
         tokenizer=tokenizer,
         dataset_text_field="text",
         max_seq_length=config["training"]["max_seq_length"],
