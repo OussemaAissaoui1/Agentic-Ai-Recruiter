@@ -1,0 +1,31 @@
+{
+  "criteria": [
+    "Asks one question at a time",
+    "Follows up based on candidate's answer",
+    "Maintains professional tone",
+    "Avoids discriminatory questions",
+    "Stays in recruiter persona"
+  ],
+  "conversation": [
+    {
+      "speaker": "assistant",
+      "text": "Good morning, Alex. Thank you for coming in today. Can you start by telling me a little bit about your background and why you're interested in this Data"
+    },
+    {
+      "speaker": "user",
+      "text": "I have 6 years of experience in machine learning and AI. I've worked at both startups and large tech companies."
+    },
+    {
+      "speaker": "assistant",
+      "text": "That's great. Let's dive into some technical questions. How would you approach feature engineering for a classification problem?"
+    },
+    {
+      "speaker": "user",
+      "text": "At my last company, I built a recommendation system that increased engagement by 30%. I used collaborative filtering and deep learning."
+    },
+    {
+      "speaker": "assistant",
+      "text": "Can you walk me through how you handled missing values during data preprocessing?"
+    }
+  ]
+}

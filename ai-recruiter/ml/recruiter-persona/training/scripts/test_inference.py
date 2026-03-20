@@ -1,31 +1,77 @@
 #!/usr/bin/env python3
 """
-Test inference script for fine-tuned recruiter persona model
-Interactive and batch testing modes
+Inference tester for the fine-tuned recruiter persona model.
+
+Supports:
+- Interactive interview chat
+- Batch scenario testing with JSON export
+- Quality spot-check conversation
 """
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import PeftModel
+import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import torch
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 
 class RecruiterInferenceTester:
-    """Test fine-tuned recruiter persona model"""
+    """Inference tester for a LoRA/QLoRA fine-tuned recruiter model."""
 
-    def __init__(self, base_model_path: str, lora_weights_path: str):
+    def __init__(
+        self,
+        base_model_path: Optional[str],
+        lora_weights_path: str,
+        backend: str = "transformers",
+        load_in_4bit: bool = True,
+        dtype: str = "bfloat16",
+        gpu_memory_utilization: float = 0.92,
+        max_model_len: int = 4096,
+        max_input_tokens: int = 3072,
+    ):
         """
         Initialize the tester.
 
         Args:
-            base_model_path: Base model HuggingFace ID
+            base_model_path: Base model HuggingFace ID. If None, inferred from adapter config.
             lora_weights_path: Path to LoRA adapter weights
+            backend: Inference backend: "transformers" or "vllm"
+            load_in_4bit: Whether to load base model in 4-bit quantized mode
+            dtype: Compute dtype: "bfloat16" or "float16"
+            gpu_memory_utilization: vLLM GPU utilization target
+            max_model_len: Maximum model context length (mainly for vLLM)
+            max_input_tokens: Input truncation budget for lower latency
         """
         self.base_model_path = base_model_path
         self.lora_weights_path = lora_weights_path
+        self.backend = backend
+        self.load_in_4bit = load_in_4bit
+        self.dtype = dtype
+        self.gpu_memory_utilization = gpu_memory_utilization
+        self.max_model_len = max_model_len
+        self.max_input_tokens = max_input_tokens
         self.model = None
         self.tokenizer = None
+        self.eos_token_ids: List[int] = []
+        self.vllm_llm = None
+        self.vllm_lora_request = None
+
+    def _infer_base_model_from_adapter(self) -> Optional[str]:
+        """Infer base model from adapter_config.json if available."""
+        adapter_config_path = Path(self.lora_weights_path) / "adapter_config.json"
+        if not adapter_config_path.exists():
+            return None
+
+        try:
+            with open(adapter_config_path, "r", encoding="utf-8") as f:
+                adapter_cfg = json.load(f)
+            return adapter_cfg.get("base_model_name_or_path")
+        except Exception:
+            return None
 
     def load_model(self):
         """Load model and tokenizer."""
@@ -33,34 +79,142 @@ class RecruiterInferenceTester:
         print("Loading model...")
         print("=" * 70)
 
+        if not self.base_model_path:
+            self.base_model_path = self._infer_base_model_from_adapter()
+
+        if not self.base_model_path:
+            raise ValueError(
+                "Base model could not be inferred from adapter_config.json. "
+                "Pass --base-model explicitly."
+            )
+
         print(f"Base model: {self.base_model_path}")
         print(f"LoRA weights: {self.lora_weights_path}")
+        print(f"Backend: {self.backend}")
+        print(f"Load in 4-bit: {self.load_in_4bit}")
+        print(f"Dtype: {self.dtype}")
+
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
 
         # Load tokenizer
         print("\n1/3 Loading tokenizer...")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_path)
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.lora_weights_path)
+        except Exception:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_path)
+
         self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = "left"
+        self.tokenizer.truncation_side = "left"
 
-        # Load base model
-        print("2/3 Loading base model...")
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.base_model_path,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-        )
+        eos_ids = []
+        if self.tokenizer.eos_token_id is not None:
+            eos_ids.append(self.tokenizer.eos_token_id)
+        eot_id = self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        if isinstance(eot_id, int) and eot_id >= 0 and eot_id not in eos_ids:
+            eos_ids.append(eot_id)
+        self.eos_token_ids = eos_ids
 
-        # Load LoRA weights
-        print("3/3 Loading LoRA adapter...")
-        self.model = PeftModel.from_pretrained(self.model, self.lora_weights_path)
-
-        self.model.eval()
+        if self.backend == "vllm":
+            print("2/3 Initializing vLLM engine...")
+            self._load_vllm_model()
+            print("3/3 Attaching LoRA adapter (vLLM)...")
+        else:
+            print("2/3 Loading base model...")
+            self._load_transformers_model()
+            print("3/3 Loading LoRA adapter...")
+            self.model = PeftModel.from_pretrained(self.model, self.lora_weights_path)
+            self.model.eval()
 
         print("\n✅ Model loaded successfully!")
         print("=" * 70 + "\n")
 
+    def _load_transformers_model(self):
+        """Load model with Transformers + PEFT path."""
+        dtype_map = {
+            "bfloat16": torch.bfloat16,
+            "float16": torch.float16,
+        }
+        torch_dtype = dtype_map.get(self.dtype, torch.bfloat16)
+
+        model_kwargs: Dict[str, Any] = {
+            "device_map": "auto",
+            "dtype": torch_dtype,
+        }
+
+        if self.load_in_4bit:
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            )
+
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.base_model_path,
+            **model_kwargs,
+        )
+
+    def _load_vllm_model(self):
+        """Load model with vLLM backend and LoRA enabled."""
+        try:
+            from vllm import LLM
+            from vllm.lora.request import LoRARequest
+        except ImportError as exc:
+            raise RuntimeError(
+                "vLLM is not installed. Install it with: pip install vllm"
+            ) from exc
+
+        self.vllm_llm = LLM(
+            model=self.base_model_path,
+            dtype=self.dtype,
+            tensor_parallel_size=1,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+            max_model_len=self.max_model_len,
+            enable_lora=True,
+            max_lora_rank=64,
+        )
+        self.vllm_lora_request = LoRARequest(
+            lora_name="recruiter_persona_adapter",
+            lora_int_id=1,
+            lora_path=self.lora_weights_path,
+        )
+
+    def _clean_response(self, raw_text: str) -> str:
+        """Trim generated content to one clean assistant turn."""
+        text = raw_text.strip()
+        if not text:
+            return "Could you tell me more about your relevant experience for this role?"
+
+        # Stop at next header/speaker marker if model keeps generating dialogue.
+        cut_markers = [
+            "<|eot_id|>",
+            "<|start_header_id|>",
+            "\nCandidate:",
+            "\nUser:",
+            "\nRecruiter:",
+            "\n👤",
+            "\n🤖",
+        ]
+        for marker in cut_markers:
+            idx = text.find(marker)
+            if idx != -1:
+                text = text[:idx].strip()
+
+        # Keep only one recruiter question to prevent long multi-turn continuations.
+        q_idx = text.find("?")
+        if q_idx != -1:
+            text = text[: q_idx + 1].strip()
+
+        if not text:
+            return "Could you share an example of a recent project you are most proud of?"
+        return text
+
     def generate_response(
         self,
-        messages: list,
+        messages: List[Dict[str, str]],
         max_new_tokens: int = 256,
         temperature: float = 0.7,
         top_p: float = 0.9,
@@ -81,32 +235,94 @@ class RecruiterInferenceTester:
         prompt = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
-            add_generation_prompt=True
+            add_generation_prompt=True,
         )
 
+        encoded = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.max_input_tokens,
+        )
+        truncated_prompt = self.tokenizer.decode(
+            encoded["input_ids"][0],
+            skip_special_tokens=False,
+        )
+
+        if self.backend == "vllm":
+            raw_response = self._generate_with_vllm(
+                prompt=truncated_prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            )
+            return self._clean_response(raw_response)
+
         # Tokenize
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = {k: v.to(self.model.device) for k, v in encoded.items()}
+        prompt_tokens = inputs["input_ids"].shape[-1]
 
         # Generate
-        with torch.no_grad():
+        with torch.inference_mode():
+            do_sample = temperature > 0.0
+            eos_for_generate: Any = self.eos_token_ids[0] if len(self.eos_token_ids) == 1 else self.eos_token_ids
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 top_p=top_p,
-                do_sample=True,
+                do_sample=do_sample,
+                repetition_penalty=1.15,
+                no_repeat_ngram_size=4,
+                use_cache=True,
                 pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=eos_for_generate,
             )
 
-        # Decode
-        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-        # Extract only the new response
-        response = generated_text[len(prompt):].strip()
+        # Decode only generated completion (avoid brittle string slicing)
+        new_tokens = outputs[0][prompt_tokens:]
+        raw_response = self.tokenizer.decode(new_tokens, skip_special_tokens=False)
+        response = self._clean_response(raw_response)
         return response
 
-    def interactive_mode(self):
+    def _generate_with_vllm(
+        self,
+        prompt: str,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float,
+    ) -> str:
+        """Generate text with vLLM backend."""
+        from vllm import SamplingParams
+
+        if self.vllm_llm is None:
+            raise RuntimeError("vLLM backend is not initialized.")
+
+        do_sample = temperature > 0.0
+        sampling_params = SamplingParams(
+            max_tokens=max_new_tokens,
+            temperature=temperature if do_sample else 0.0,
+            top_p=top_p if do_sample else 1.0,
+            repetition_penalty=1.15,
+            stop_token_ids=self.eos_token_ids if self.eos_token_ids else None,
+        )
+
+        outputs = self.vllm_llm.generate(
+            [prompt],
+            sampling_params=sampling_params,
+            lora_request=self.vllm_lora_request,
+        )
+
+        if not outputs or not outputs[0].outputs:
+            return ""
+        return outputs[0].outputs[0].text
+
+    def interactive_mode(
+        self,
+        max_new_tokens: int = 128,
+        temperature: float = 0.4,
+        top_p: float = 0.9,
+    ):
         """Run interactive interview simulation."""
         print("\n" + "=" * 70)
         print("🎤 INTERACTIVE INTERVIEW MODE")
@@ -118,9 +334,18 @@ class RecruiterInferenceTester:
         print("  - Type 'restart' to start a new interview")
         print("=" * 70 + "\n")
 
-        self._run_interview()
+        self._run_interview(
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
 
-    def _run_interview(self):
+    def _run_interview(
+        self,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float,
+    ):
         """Run a single interview session."""
         # Initialize conversation
         messages = [
@@ -132,7 +357,12 @@ class RecruiterInferenceTester:
 
         # Generate first question
         print("🤖 Alex (Recruiter):")
-        first_question = self.generate_response(messages, max_new_tokens=150)
+        first_question = self.generate_response(
+            messages,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
         print(f"   {first_question}\n")
         messages.append({"role": "assistant", "content": first_question})
 
@@ -152,7 +382,11 @@ class RecruiterInferenceTester:
                 break
             elif candidate_response.lower() == 'restart':
                 print("\n🔄 Starting new interview...\n")
-                self._run_interview()
+                self._run_interview(
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
                 return
 
             if not candidate_response:
@@ -164,7 +398,12 @@ class RecruiterInferenceTester:
 
             # Generate recruiter response
             print(f"\n🤖 Alex (Recruiter):")
-            recruiter_response = self.generate_response(messages, max_new_tokens=200)
+            recruiter_response = self.generate_response(
+                messages,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            )
             print(f"   {recruiter_response}\n")
 
             # Add to conversation
@@ -173,8 +412,13 @@ class RecruiterInferenceTester:
             turn += 1
             print("-" * 70 + "\n")
 
-    def batch_test_mode(self):
-        """Run batch testing with predefined scenarios."""
+    def batch_test_mode(
+        self,
+        max_new_tokens: int = 200,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+    ) -> List[Dict[str, Any]]:
+        """Run batch testing with predefined scenarios and return collected results."""
         print("\n" + "=" * 70)
         print("🧪 BATCH TEST MODE")
         print("=" * 70 + "\n")
@@ -197,6 +441,8 @@ class RecruiterInferenceTester:
                 "background": "I'm a UX designer with 4 years of experience in both agency and in-house roles. I specialize in user research and interaction design. I've led design projects for mobile apps and web applications. I'm interested in this role because I admire your company's design philosophy.",
             },
         ]
+
+        results: List[Dict[str, Any]] = []
 
         for i, test in enumerate(test_cases, 1):
             print(f"Test Case {i}/{len(test_cases)}: {test['role']}")
@@ -221,13 +467,34 @@ class RecruiterInferenceTester:
             print(f"   {test['background']}\n")
 
             print("🤖 Alex (Follow-up):")
-            response = self.generate_response(messages, max_new_tokens=200)
+            response = self.generate_response(
+                messages,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            )
             print(f"   {response}\n")
+
+            results.append(
+                {
+                    "case_id": i,
+                    "role": test["role"],
+                    "candidate_background": test["background"],
+                    "recruiter_follow_up": response,
+                }
+            )
 
             print("=" * 70 + "\n")
 
-    def quality_check(self):
-        """Run quality checks on model outputs."""
+        return results
+
+    def quality_check(
+        self,
+        max_new_tokens: int = 150,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+    ) -> Dict[str, Any]:
+        """Run quality checks on model outputs and return generated conversation."""
         print("\n" + "=" * 70)
         print("✅ QUALITY CHECK MODE")
         print("=" * 70 + "\n")
@@ -258,7 +525,12 @@ class RecruiterInferenceTester:
 
         # First exchange
         print("🤖 Alex (Opening):")
-        q1 = self.generate_response(messages, max_new_tokens=150)
+        q1 = self.generate_response(
+            messages,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
         print(f"   {q1}\n")
         messages.append({"role": "assistant", "content": q1})
 
@@ -269,7 +541,12 @@ class RecruiterInferenceTester:
 
         # Second exchange
         print("🤖 Alex (Follow-up #1):")
-        q2 = self.generate_response(messages, max_new_tokens=150)
+        q2 = self.generate_response(
+            messages,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
         print(f"   {q2}\n")
         messages.append({"role": "assistant", "content": q2})
 
@@ -280,7 +557,12 @@ class RecruiterInferenceTester:
 
         # Third exchange
         print("🤖 Alex (Follow-up #2):")
-        q3 = self.generate_response(messages, max_new_tokens=150)
+        q3 = self.generate_response(
+            messages,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
         print(f"   {q3}\n")
 
         print("\n" + "=" * 70)
@@ -290,26 +572,114 @@ class RecruiterInferenceTester:
             print(f"  [ ] {criterion}")
         print("=" * 70 + "\n")
 
+        return {
+            "criteria": criteria,
+            "conversation": [
+                {"speaker": "assistant", "text": q1},
+                {"speaker": "user", "text": r1},
+                {"speaker": "assistant", "text": q2},
+                {"speaker": "user", "text": r2},
+                {"speaker": "assistant", "text": q3},
+            ],
+        }
+
+
+def save_json(path: str, payload: Any):
+    """Save JSON payload to disk."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    print(f"\n✅ Saved results to: {target}")
+
 
 def main():
     """Main function."""
-    import argparse
-
     parser = argparse.ArgumentParser(description="Test fine-tuned recruiter persona model")
     parser.add_argument(
+        "--backend",
+        choices=["transformers", "vllm"],
+        default="transformers",
+        help="Inference backend to use",
+    )
+    parser.add_argument(
         "--base-model",
-        default="meta-llama/Meta-Llama-3.1-8B-Instruct",
-        help="Base model HuggingFace ID"
+        default=None,
+        help="Base model HuggingFace ID (optional; inferred from adapter config when omitted)",
     )
     parser.add_argument(
         "--lora-weights",
-        default="../output/recruiter-persona-llama-3.1-8b/final",
-        help="Path to LoRA adapter weights"
+        default="/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training/output/recruiter-persona-llama-3.1-8b/final",
+        help="Path to LoRA adapter weights",
     )
     parser.add_argument(
         "--mode",
         choices=["interactive", "batch", "quality"],
-        help="Testing mode (if not specified, will prompt)"
+        help="Testing mode (if not specified, will prompt)",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=128,
+        help="Maximum tokens to generate per response",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.4,
+        help="Sampling temperature",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=0.9,
+        help="Nucleus sampling top-p",
+    )
+    parser.add_argument(
+        "--load-in-4bit",
+        action="store_true",
+        default=True,
+        help="Load base model in 4-bit mode (recommended for single-GPU inference)",
+    )
+    parser.add_argument(
+        "--no-load-in-4bit",
+        dest="load_in_4bit",
+        action="store_false",
+        help="Disable 4-bit loading",
+    )
+    parser.add_argument(
+        "--dtype",
+        choices=["bfloat16", "float16"],
+        default="bfloat16",
+        help="Compute dtype",
+    )
+    parser.add_argument(
+        "--max-input-tokens",
+        type=int,
+        default=3072,
+        help="Input token truncation budget (lower = faster turns)",
+    )
+    parser.add_argument(
+        "--max-model-len",
+        type=int,
+        default=4096,
+        help="Maximum model context length (used by vLLM)",
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.92,
+        help="vLLM GPU memory utilization target",
+    )
+    parser.add_argument(
+        "--optimize-latency",
+        action="store_true",
+        help="Apply low-latency defaults for interactive inference",
+    )
+    parser.add_argument(
+        "--output-file",
+        default=None,
+        help="Optional output JSON path for batch/quality mode",
     )
 
     args = parser.parse_args()
@@ -325,8 +695,28 @@ def main():
         print(f"\nPlease train the model first or update the path.")
         sys.exit(1)
 
+    if args.optimize_latency:
+        args.max_new_tokens = min(args.max_new_tokens, 96)
+        args.temperature = min(args.temperature, 0.3)
+        args.max_input_tokens = min(args.max_input_tokens, 2048)
+        print("\n⚡ Latency optimization profile enabled:")
+        print(f"   max_new_tokens={args.max_new_tokens}")
+        print(f"   temperature={args.temperature}")
+        print(f"   max_input_tokens={args.max_input_tokens}")
+        if args.backend == "transformers" and args.load_in_4bit:
+            print("   note: 4-bit is memory-efficient but can be slower; use --no-load-in-4bit for max speed if VRAM allows")
+
     # Initialize tester
-    tester = RecruiterInferenceTester(args.base_model, args.lora_weights)
+    tester = RecruiterInferenceTester(
+        base_model_path=args.base_model,
+        lora_weights_path=args.lora_weights,
+        backend=args.backend,
+        load_in_4bit=args.load_in_4bit,
+        dtype=args.dtype,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=args.max_model_len,
+        max_input_tokens=args.max_input_tokens,
+    )
     tester.load_model()
 
     # Select mode
@@ -344,11 +734,27 @@ def main():
 
     # Run selected mode
     if mode == "interactive":
-        tester.interactive_mode()
+        tester.interactive_mode(
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
     elif mode == "batch":
-        tester.batch_test_mode()
+        batch_results = tester.batch_test_mode(
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
+        if args.output_file:
+            save_json(args.output_file, batch_results)
     elif mode == "quality":
-        tester.quality_check()
+        quality_results = tester.quality_check(
+            max_new_tokens=min(args.max_new_tokens, 200),
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
+        if args.output_file:
+            save_json(args.output_file, quality_results)
     else:
         print("\nGoodbye!")
         sys.exit(0)
