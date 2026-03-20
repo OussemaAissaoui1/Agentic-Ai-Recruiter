@@ -201,6 +201,8 @@ def main():
         enable_early_stopping=True,
         enable_memory_monitor=True,
         enable_sample_generation=True,
+        early_stopping_patience=2,
+        early_stopping_threshold=0.002,
     )
 
     # 8.5 Setup assistant-only loss masking for strict recruiter generation.

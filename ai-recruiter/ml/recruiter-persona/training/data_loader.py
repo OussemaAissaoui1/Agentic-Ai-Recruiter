@@ -3,7 +3,7 @@ Data Loading and Processing for Recruiter Persona Fine-tuning
 Handles loading, formatting, and collation of interview conversation data
 """
 
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from typing import Dict, List, Optional
 import json
 
@@ -34,6 +34,34 @@ class RecruiterDataLoader:
         self.eval_path = eval_path
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
+
+    @staticmethod
+    def _is_valid_conversation(example: Dict) -> bool:
+        """Return True when a sample has well-formed, non-empty chat messages."""
+        messages = example.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return False
+
+        valid_roles = {"system", "user", "assistant"}
+        seen_user = False
+        seen_assistant = False
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                return False
+            role = msg.get("role")
+            content = msg.get("content")
+            if role not in valid_roles:
+                return False
+            if not isinstance(content, str) or not content.strip():
+                return False
+            if role == "user":
+                seen_user = True
+            if role == "assistant":
+                seen_assistant = True
+
+        # Keep only interview-like dialogues with both sides present.
+        return seen_user and seen_assistant
 
     def load_datasets(self):
         """
@@ -75,6 +103,73 @@ class RecruiterDataLoader:
 
         return {"text": formatted_text}
 
+    @staticmethod
+    def _is_question_like_assistant_turn(messages: List[Dict], idx: int) -> bool:
+        """Check whether an assistant message is a suitable single-question target."""
+        msg = messages[idx]
+        if msg.get("role") != "assistant":
+            return False
+
+        # Train only on direct recruiter prompts after user context.
+        if idx == 0 or messages[idx - 1].get("role") != "user":
+            return False
+
+        content = (msg.get("content") or "").strip()
+        if not content:
+            return False
+
+        question_marks = content.count("?")
+        if question_marks != 1:
+            return False
+
+        # Avoid very long responses that tend to include explanation + follow-up.
+        if len(content) > 280:
+            return False
+
+        return True
+
+    def _build_question_turn_dataset(self, dataset, split_name: str):
+        """Convert conversation-level samples into assistant-question supervision samples."""
+        records = []
+        skipped_too_long = 0
+
+        for example in dataset:
+            messages = example.get("messages", [])
+            if not isinstance(messages, list) or not messages:
+                continue
+
+            for idx, msg in enumerate(messages):
+                if not self._is_question_like_assistant_turn(messages, idx):
+                    continue
+
+                # Include context up to and including the assistant target turn.
+                clipped_messages = messages[: idx + 1]
+                text = self.tokenizer.apply_chat_template(
+                    clipped_messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
+
+                token_count = len(self.tokenizer(text, add_special_tokens=False)["input_ids"])
+                if token_count > self.max_seq_length:
+                    skipped_too_long += 1
+                    continue
+
+                records.append({"text": text})
+
+        print(
+            f"Built {len(records)} {split_name} question-turn samples "
+            f"(skipped {skipped_too_long} over max_seq_length={self.max_seq_length})."
+        )
+
+        if not records:
+            raise ValueError(
+                f"No usable {split_name} samples after question-turn extraction. "
+                "Relax constraints or review dataset quality."
+            )
+
+        return Dataset.from_list(records)
+
     def prepare_datasets(self):
         """
         Load and format datasets for training.
@@ -84,21 +179,34 @@ class RecruiterDataLoader:
         """
         train_dataset, eval_dataset = self.load_datasets()
 
-        # Apply formatting
-        print("\nFormatting training data...")
-        train_dataset = train_dataset.map(
-            self.format_chat_template,
-            desc="Formatting train data",
+        # Filter out malformed samples before tokenization/template formatting.
+        original_train_size = len(train_dataset)
+        original_eval_size = len(eval_dataset)
+        train_dataset = train_dataset.filter(
+            self._is_valid_conversation,
+            desc="Filtering invalid train samples",
+        )
+        eval_dataset = eval_dataset.filter(
+            self._is_valid_conversation,
+            desc="Filtering invalid eval samples",
+        )
+        print(
+            f"Kept {len(train_dataset)}/{original_train_size} train samples "
+            f"and {len(eval_dataset)}/{original_eval_size} eval samples after validation."
         )
 
-        print("Formatting evaluation data...")
-        eval_dataset = eval_dataset.map(
-            self.format_chat_template,
-            desc="Formatting eval data",
-        )
+        # Build training examples from assistant turns that match one-question behavior.
+        print("\nExtracting question-turn training samples...")
+        train_dataset = self._build_question_turn_dataset(train_dataset, "train")
+
+        print("Extracting question-turn evaluation samples...")
+        eval_dataset = self._build_question_turn_dataset(eval_dataset, "eval")
 
         # Print sample
-        self._print_sample(train_dataset[0])
+        if len(train_dataset) > 0:
+            self._print_sample(train_dataset[0])
+        else:
+            raise ValueError("No valid training samples remain after filtering.")
 
         return train_dataset, eval_dataset
 

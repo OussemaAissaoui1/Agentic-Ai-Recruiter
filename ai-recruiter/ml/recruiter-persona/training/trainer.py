@@ -9,6 +9,7 @@ import os
 import json
 from typing import Dict, List
 import time
+import torch
 
 
 class InterviewMetricsCallback(TrainerCallback):
@@ -259,6 +260,8 @@ def get_default_callbacks(
     enable_early_stopping: bool = True,
     enable_memory_monitor: bool = True,
     enable_sample_generation: bool = True,
+    early_stopping_patience: int = 3,
+    early_stopping_threshold: float = 0.002,
 ):
     """
     Get default callbacks for recruiter persona training.
@@ -272,12 +275,15 @@ def get_default_callbacks(
     Returns:
         List of callbacks
     """
-    import torch
-
     callbacks = [InterviewMetricsCallback()]
 
     if enable_early_stopping:
-        callbacks.append(EarlyStoppingCallback(early_stopping_patience=3))
+        callbacks.append(
+            EarlyStoppingCallback(
+                early_stopping_patience=early_stopping_patience,
+                early_stopping_threshold=early_stopping_threshold,
+            )
+        )
 
     if enable_memory_monitor and torch.cuda.is_available():
         callbacks.append(MemoryMonitorCallback(log_every_n_steps=100))

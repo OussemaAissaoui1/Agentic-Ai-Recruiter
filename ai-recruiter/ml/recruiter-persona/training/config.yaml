@@ -75,9 +75,9 @@ training:
 
   # Evaluation & Saving
   eval_strategy: "steps"
-  eval_steps: 400
+  eval_steps: 150
   save_strategy: "steps"
-  save_steps: 400
+  save_steps: 150
   save_total_limit: 3             # Keep only 3 best checkpoints
   load_best_model_at_end: true
   metric_for_best_model: "eval_loss"
