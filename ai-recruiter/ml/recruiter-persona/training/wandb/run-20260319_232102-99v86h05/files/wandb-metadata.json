@@ -1,0 +1,28 @@
+{
+  "os": "Linux-6.8.0-1007-gcp-x86_64-with-glibc2.39",
+  "python": "CPython 3.12.11",
+  "startedAt": "2026-03-19T23:21:02.032507Z",
+  "program": "/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training/train.py",
+  "codePath": "ai-recruiter/ml/recruiter-persona/training/train.py",
+  "codePathLocal": "train.py",
+  "git": {
+    "remote": "https://github.com/OussemaAissaoui1/Agentic-Ai-Recruiter.git",
+    "commit": "535f1ef01d3e9d03a2660c31fb093ad1e7f776d7"
+  },
+  "email": "oussa612@gmail.com",
+  "root": "/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training",
+  "host": "cs-01km45mc43cb2wx1m075jaca8d",
+  "executable": "/home/zeus/miniconda3/envs/cloudspace/bin/python",
+  "cpu_count": 2,
+  "cpu_count_logical": 4,
+  "disk": {
+    "/": {
+      "total": "395184570368",
+      "used": "18060939264"
+    }
+  },
+  "memory": {
+    "total": "16767406080"
+  },
+  "writerId": "q1rrfdekb8cdq7adizosiuaxqiy2ed7n"
+}

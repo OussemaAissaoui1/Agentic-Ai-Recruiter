@@ -1,0 +1,148 @@
+# Recruiter Persona Fine-tuning Configuration
+# Optimized for L40 24GB GPU on Lightning AI Platform
+
+# ============================================================================
+# Model Configuration
+# ============================================================================
+base_model: "meta-llama/Meta-Llama-3.1-8B-Instruct"  # Best for conversational tasks
+
+# Alternative models (uncomment to use):
+# base_model: "mistralai/Mistral-7B-Instruct-v0.3"  # Faster training
+# base_model: "Qwen/Qwen2.5-7B-Instruct"            # Better role-playing
+# base_model: "meta-llama/Llama-3.2-3B-Instruct"    # Quick iteration
+
+output_dir: "./output/recruiter-persona-llama-3.1-8b"
+
+# ============================================================================
+# Data Configuration
+# ============================================================================
+train_data: "../data/final/recruiter_llama_train_messages.jsonl"
+eval_data: "../data/final/recruiter_llama_eval_messages.jsonl"
+
+# ============================================================================
+# Training Method
+# ============================================================================
+method: "qlora"  # Options: qlora, lora, full
+
+# QLoRA 4-bit Quantization Settings
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+# ============================================================================
+# LoRA Configuration
+# ============================================================================
+lora:
+  r: 16                          # Reduced rank to lower VRAM usage
+  lora_alpha: 32                 # Keep alpha ~= 2x rank
+  lora_dropout: 0.05             # Low dropout for conversational tasks
+  target_modules:                # Target all linear layers
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# ============================================================================
+# Training Hyperparameters
+# ============================================================================
+training:
+  # Learning & Optimization
+  learning_rate: 2.0e-4          # 2e-4 optimal for conversational tasks
+  lr_scheduler_type: "cosine"    # Smooth decay
+  warmup_ratio: 0.03             # 3% warmup
+  weight_decay: 0.01
+  optim: "paged_adamw_8bit"      # Memory-efficient optimizer
+
+  # Batch Configuration
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 32  # Effective batch stays = 32
+
+  # Training Duration
+  num_train_epochs: 3             # 3-4 epochs for good convergence
+  max_steps: -1                   # -1 means train for full epochs
+
+  # Sequence Length
+  max_seq_length: 1024            # Reduced for lower activation memory
+  packing: false                  # Keep conversations intact
+
+  # Evaluation & Saving
+  eval_strategy: "steps"
+  eval_steps: 200
+  save_strategy: "steps"
+  save_steps: 200
+  save_total_limit: 3             # Keep only 3 best checkpoints
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+
+  # Performance Optimizations
+  bf16: true                      # L40 supports bfloat16
+  tf32: true                      # Enable TF32 for faster training
+  fp16: false                     # Use bf16 instead
+  gradient_checkpointing: true    # Save memory
+  dataloader_num_workers: 4
+
+  # Logging
+  logging_dir: "./logs"
+  logging_steps: 10
+  logging_first_step: true
+  report_to: "wandb"              # Options: wandb, tensorboard, none
+
+  # Reproducibility
+  seed: 42
+  data_seed: 42
+
+  # Advanced
+  remove_unused_columns: true
+  group_by_length: false          # Set true if variable length conversations
+  ddp_find_unused_parameters: false
+
+# ============================================================================
+# Inference Configuration (for testing)
+# ============================================================================
+inference:
+  max_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  do_sample: true
+  repetition_penalty: 1.1
+
+# ============================================================================
+# Wandb Configuration (optional)
+# ============================================================================
+wandb:
+  project: "recruiter-persona-finetuning"
+  name: "llama-3.1-8b-qlora"
+  tags:
+    - "recruiter"
+    - "persona"
+    - "qlora"
+    - "llama-3.1"
+  notes: "Fine-tuning Llama 3.1 8B for recruiter persona using QLoRA on L40 24GB"
+
+# ============================================================================
+# Hardware Configuration
+# ============================================================================
+hardware:
+  gpu: "L40"
+  vram_gb: 24
+  expected_usage_gb: 18-20
+  expected_training_time_hours: 4-5
+
+# ============================================================================
+# Expected Metrics
+# ============================================================================
+expected_metrics:
+  initial_loss: 2.0-2.5
+  final_train_loss: 0.4-0.8
+  final_eval_loss: 0.5-0.9
+  total_steps: ~730  # (7749 samples / 32 batch * 3 epochs)
