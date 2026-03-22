@@ -1,0 +1,26 @@
+[
+  {
+    "case_id": 1,
+    "role": "Software Engineer",
+    "candidate_background": "I have 5 years of experience in full-stack development, primarily working with React, Node.js, and PostgreSQL. I'm interested in this role because I want to work on more challenging problems and scale my impact.",
+    "recruiter_follow_up": "Great, let's dive into some technical questions. How would you design an efficient data structure to store and retrieve user information from a large database?"
+  },
+  {
+    "case_id": 2,
+    "role": "Data Scientist",
+    "candidate_background": "I've been working in data science for 3 years, focusing on machine learning and predictive analytics. Most recently, I built recommendation systems at a fintech startup. I'm excited about this opportunity because of your company's work in AI and the chance to work with larger datasets.",
+    "recruiter_follow_up": "That sounds great. Let's dive into some technical questions. How do you approach feature engineering when working with a new dataset?"
+  },
+  {
+    "case_id": 3,
+    "role": "Product Manager",
+    "candidate_background": "I have 7 years of experience leading product teams in SaaS companies. I've successfully launched several B2B products and led cross-functional teams of 15+ people. I'm interested in this role because I want to work on products that have real impact at scale.",
+    "recruiter_follow_up": "That's great. Let's dive into some specific skills. How do you approach market research when launching a new product?"
+  },
+  {
+    "case_id": 4,
+    "role": "UX Designer",
+    "candidate_background": "I'm a UX designer with 4 years of experience in both agency and in-house roles. I specialize in user research and interaction design. I've led design projects for mobile apps and web applications. I'm interested in this role because I admire your company's design philosophy.",
+    "recruiter_follow_up": "Great, thank you for sharing that. Let's dive into some technical skills. How would you approach creating prototypes using Figma?"
+  }
+]

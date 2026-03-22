@@ -3,13 +3,15 @@
 Inference tester for the fine-tuned recruiter persona model.
 
 Supports:
-- Interactive interview chat
+- Fast one-turn testing (recommended for one-turn-trained adapters)
+- Interactive chat testing
 - Batch scenario testing with JSON export
 - Quality spot-check conversation
 """
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -183,34 +185,42 @@ class RecruiterInferenceTester:
         )
 
     def _clean_response(self, raw_text: str) -> str:
-        """Trim generated content to one clean assistant turn."""
-        text = raw_text.strip()
-        if not text:
-            return "Could you tell me more about your relevant experience for this role?"
-
-        # Stop at next header/speaker marker if model keeps generating dialogue.
-        cut_markers = [
-            "<|eot_id|>",
-            "<|start_header_id|>",
-            "\nCandidate:",
-            "\nUser:",
-            "\nRecruiter:",
-            "\n👤",
-            "\n🤖",
-        ]
-        for marker in cut_markers:
-            idx = text.find(marker)
-            if idx != -1:
-                text = text[:idx].strip()
-
-        # Keep only one recruiter question to prevent long multi-turn continuations.
+        """Light cleanup plus first-question stop for one-question behavior."""
+        text = raw_text.replace("<|eot_id|>", "").strip()
         q_idx = text.find("?")
         if q_idx != -1:
             text = text[: q_idx + 1].strip()
-
         if not text:
-            return "Could you share an example of a recent project you are most proud of?"
+            return "Could you share more about your experience?"
         return text
+
+    def _clean_one_turn_response(self, text: str) -> str:
+        """Keep a single recruiter follow-up and strip speaker-continuation artifacts."""
+        cleaned = text.strip()
+
+        # Cut if model starts simulating additional speakers/turns.
+        speaker_markers = [
+            r"\bcandidate\s*:",
+            r"\buser\s*:",
+            r"\binterviewer\s*:",
+            r"\brecruiter\s*:",
+            r"\baron\s*:",
+            r"\byou\s*:",
+        ]
+        marker_regex = re.compile("|".join(speaker_markers), flags=re.IGNORECASE)
+        marker_match = marker_regex.search(cleaned)
+        if marker_match:
+            cleaned = cleaned[:marker_match.start()].strip()
+
+        # For one-turn testing we prefer a single concise follow-up question.
+        q_index = cleaned.find("?")
+        if q_index != -1:
+            cleaned = cleaned[: q_index + 1].strip()
+
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if not cleaned:
+            return "Could you tell me a bit more about your relevant experience for this role?"
+        return cleaned
 
     def generate_response(
         self,
@@ -272,8 +282,7 @@ class RecruiterInferenceTester:
                 temperature=temperature,
                 top_p=top_p,
                 do_sample=do_sample,
-                repetition_penalty=1.15,
-                no_repeat_ngram_size=4,
+                repetition_penalty=1.05,
                 use_cache=True,
                 pad_token_id=self.tokenizer.eos_token_id,
                 eos_token_id=eos_for_generate,
@@ -305,6 +314,7 @@ class RecruiterInferenceTester:
             top_p=top_p if do_sample else 1.0,
             repetition_penalty=1.15,
             stop_token_ids=self.eos_token_ids if self.eos_token_ids else None,
+            stop=["?"],
         )
 
         outputs = self.vllm_llm.generate(
@@ -339,6 +349,57 @@ class RecruiterInferenceTester:
             temperature=temperature,
             top_p=top_p,
         )
+
+    def one_turn_mode(
+        self,
+        max_new_tokens: int = 96,
+        temperature: float = 0.2,
+        top_p: float = 0.9,
+    ):
+        """Fast one-turn testing loop for one-turn-trained recruiter adapters."""
+        print("\n" + "=" * 70)
+        print("⚡ ONE-TURN MODE (RECOMMENDED)")
+        print("=" * 70)
+        print("\nProvide a candidate response; model returns one recruiter follow-up.")
+        print("Commands: 'quit'/'exit' to stop")
+        print("=" * 70 + "\n")
+
+        system_prompt = (
+    "You are Alex, a senior recruiter at Acme Corp interviewing for a "
+    "Senior Data Engineer role. Ask exactly ONE concise follow-up question. "
+    "Never greet or close. No filler like 'great' or 'thanks'. "
+    "No candidate dialogue. Stay on topic."
+)
+
+        while True:
+            print("👤 Candidate:")
+            try:
+                candidate_response = input("   > ").strip()
+            except EOFError:
+                break
+
+            if candidate_response.lower() in ["quit", "exit", "q"]:
+                print("\n👋 One-turn test ended.")
+                break
+            if not candidate_response:
+                print("   (Please provide a candidate response)\n")
+                continue
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": candidate_response},
+            ]
+
+            print("\n🤖 Alex (One-turn follow-up):")
+            response = self.generate_response(
+                messages,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            )
+            response = self._clean_one_turn_response(response)
+            print(f"   {response}\n")
+            print("-" * 70 + "\n")
 
     def _run_interview(
         self,
@@ -614,7 +675,7 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["interactive", "batch", "quality"],
+        choices=["one-turn", "interactive", "batch", "quality"],
         help="Testing mode (if not specified, will prompt)",
     )
     parser.add_argument(
@@ -696,8 +757,7 @@ def main():
         sys.exit(1)
 
     if args.optimize_latency:
-        args.max_new_tokens = min(args.max_new_tokens, 96)
-        args.temperature = min(args.temperature, 0.3)
+        args.max_new_tokens = min(args.max_new_tokens, 128)
         args.max_input_tokens = min(args.max_input_tokens, 2048)
         print("\n⚡ Latency optimization profile enabled:")
         print(f"   max_new_tokens={args.max_new_tokens}")
@@ -723,17 +783,30 @@ def main():
     mode = args.mode
     if not mode:
         print("\n📋 Select Testing Mode:")
-        print("  1. Interactive - Chat with the model")
-        print("  2. Batch Test - Run predefined test cases")
-        print("  3. Quality Check - Manual quality assessment")
-        print("  4. Exit")
+        print("  1. One-turn - Fast single follow-up tests (recommended)")
+        print("  2. Interactive - Multi-turn chat with memory")
+        print("  3. Batch Test - Run predefined test cases")
+        print("  4. Quality Check - Manual quality assessment")
+        print("  5. Exit")
 
-        choice = input("\nSelect option (1-4): ").strip()
-        mode_map = {"1": "interactive", "2": "batch", "3": "quality", "4": "exit"}
+        choice = input("\nSelect option (1-5): ").strip()
+        mode_map = {
+            "1": "one-turn",
+            "2": "interactive",
+            "3": "batch",
+            "4": "quality",
+            "5": "exit",
+        }
         mode = mode_map.get(choice, "exit")
 
     # Run selected mode
-    if mode == "interactive":
+    if mode == "one-turn":
+        tester.one_turn_mode(
+            max_new_tokens=min(args.max_new_tokens, 160),
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
+    elif mode == "interactive":
         tester.interactive_mode(
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,

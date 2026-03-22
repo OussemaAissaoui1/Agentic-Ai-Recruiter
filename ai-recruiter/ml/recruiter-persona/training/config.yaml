@@ -22,7 +22,7 @@ eval_data: "../data/final/recruiter_llama_eval_messages.jsonl"
 # ============================================================================
 # Training Method
 # ============================================================================
-method: "qlora"  # Options: qlora, lora, full
+method: "qlora"  
 
 # QLoRA 4-bit Quantization Settings
 quantization:
@@ -61,40 +61,40 @@ training:
   optim: "paged_adamw_8bit"      # Memory-efficient optimizer
 
   # Batch Configuration
-  per_device_train_batch_size: 2
-  per_device_eval_batch_size: 2
-  gradient_accumulation_steps: 16  # Effective batch stays = 32
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8   # Keep effective batch ~= 32 for quality
 
   # Training Duration
-  num_train_epochs: 2.5           # Best tradeoff from your logs (close to best eval at ~step 600)
-  max_steps: -1                   # -1 means train for full epochs
+  num_train_epochs: 2.0            # Acts as fallback when max_steps is reached first
+  max_steps: 900                   # L4-friendly cap to prevent multi-day runs
 
   # Sequence Length
-  max_seq_length: 1024            # Reduced for lower activation memory
+  max_seq_length: 896              # Better L4 throughput with minimal quality loss
   packing: false                  # Keep conversations intact
 
   # Evaluation & Saving
   eval_strategy: "steps"
-  eval_steps: 150
+  eval_steps: 300
   save_strategy: "steps"
-  save_steps: 150
-  save_total_limit: 3             # Keep only 3 best checkpoints
+  save_steps: 300
+  save_total_limit: 3              # Keep only 3 best checkpoints
   load_best_model_at_end: true
   metric_for_best_model: "eval_loss"
   greater_is_better: false
 
   # Performance Optimizations
-  bf16: true                      # L40 supports bfloat16
-  tf32: true                      # Enable TF32 for faster training
-  fp16: false                     # Use bf16 instead
-  gradient_checkpointing: true    # Save memory
-  dataloader_num_workers: 6
+  bf16: true                       # L4 supports bfloat16
+  tf32: true                       # Enable TF32 for faster training
+  fp16: false                      # Use bf16 instead
+  gradient_checkpointing: true     # Keep memory headroom on L4
+  dataloader_num_workers: 4
 
   # Logging
   logging_dir: "/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training/output_v2/recruiter-persona-llama-3.1-8b/logs"
-  logging_steps: 10
+  logging_steps: 25
   logging_first_step: true
-  report_to: "wandb"              # Options: wandb, tensorboard, none
+  report_to: "wandb"               # Enable W&B logging for training metrics
 
   # Reproducibility
   seed: 42
@@ -133,16 +133,16 @@ wandb:
 # Hardware Configuration
 # ============================================================================
 hardware:
-  gpu: "L40"
+  gpu: "L4"
   vram_gb: 24
-  expected_usage_gb: 18-20
-  expected_training_time_hours: 4-5
+  expected_usage_gb: 14-20
+  expected_training_time_hours: 8-16
 
 # ============================================================================
 # Expected Metrics
 # ============================================================================
 expected_metrics:
   initial_loss: 2.0-2.5
-  final_train_loss: 0.4-0.8
-  final_eval_loss: 0.5-0.9
-  total_steps: ~730  # (7749 samples / 32 batch * 3 epochs)
+  final_train_loss: 0.4-0.9
+  final_eval_loss: 0.5-1.0
+  total_steps: 900  # Capped for L4 runtime consistency

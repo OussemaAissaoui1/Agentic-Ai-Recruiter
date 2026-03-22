@@ -199,8 +199,8 @@ def main():
     callbacks = get_default_callbacks(
         tokenizer=tokenizer,
         enable_early_stopping=True,
-        enable_memory_monitor=True,
-        enable_sample_generation=True,
+        enable_memory_monitor=False,
+        enable_sample_generation=False,
         early_stopping_patience=2,
         early_stopping_threshold=0.002,
     )
