@@ -1,16 +1,16 @@
 {
   "input_rows": 10174,
   "parsed_rows": 10144,
-  "filtered_out": 1545,
-  "after_filter_before_dedup": 8629,
+  "filtered_out": 1536,
+  "after_filter_before_dedup": 8638,
   "duplicates_removed": 0,
-  "kept_rows": 8629,
-  "keep_rate_pct": 84.81,
-  "train_rows": 7749,
+  "kept_rows": 8638,
+  "keep_rate_pct": 84.9,
+  "train_rows": 7758,
   "eval_rows": 880,
   "reason_counts": {
     "technical_question_style": 908,
-    "very_short_turn": 448,
+    "very_short_turn": 438,
     "too_few_turns": 169,
     "insufficient_role_balance": 169,
     "very_long_turn": 88,
@@ -21,21 +21,21 @@
     "no_interviewer_question": 2
   },
   "decision_distribution": {
-    "reject": 4267,
-    "select": 4362
+    "reject": 4273,
+    "select": 4365
   },
   "top_roles": [
     [
       "Product Manager",
-      433
+      434
     ],
     [
       "Data Scientist",
-      432
+      433
     ],
     [
       "Data Engineer",
-      387
+      388
     ],
     [
       "Data Analyst",
@@ -43,7 +43,7 @@
     ],
     [
       "UI Engineer",
-      271
+      272
     ],
     [
       "product manager",
@@ -51,7 +51,7 @@
     ],
     [
       "Software Engineer",
-      263
+      264
     ],
     [
       "E-commerce Specialist",
@@ -82,15 +82,15 @@
       239
     ],
     [
+      "data scientist",
+      231
+    ],
+    [
       "Robotics Engineer",
       229
     ],
     [
       "Content Writer",
-      229
-    ],
-    [
-      "data scientist",
       229
     ],
     [

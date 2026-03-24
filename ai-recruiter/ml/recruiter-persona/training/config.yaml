@@ -117,7 +117,7 @@ inference:
   repetition_penalty: 1.1
 
 # ============================================================================
-# Wandb Configuration (optional)
+# Wandb Configuration 
 # ============================================================================
 wandb:
   project: "recruiter-persona-finetuning"
