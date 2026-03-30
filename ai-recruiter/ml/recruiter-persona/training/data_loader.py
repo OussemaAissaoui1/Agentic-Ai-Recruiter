@@ -103,73 +103,6 @@ class RecruiterDataLoader:
 
         return {"text": formatted_text}
 
-    @staticmethod
-    def _is_question_like_assistant_turn(messages: List[Dict], idx: int) -> bool:
-        """Check whether an assistant message is a suitable single-question target."""
-        msg = messages[idx]
-        if msg.get("role") != "assistant":
-            return False
-
-        # Train only on direct recruiter prompts after user context.
-        if idx == 0 or messages[idx - 1].get("role") != "user":
-            return False
-
-        content = (msg.get("content") or "").strip()
-        if not content:
-            return False
-
-        question_marks = content.count("?")
-        if question_marks != 1:
-            return False
-
-        # Avoid very long responses that tend to include explanation + follow-up.
-        if len(content) > 280:
-            return False
-
-        return True
-
-    def _build_question_turn_dataset(self, dataset, split_name: str):
-        """Convert conversation-level samples into assistant-question supervision samples."""
-        records = []
-        skipped_too_long = 0
-
-        for example in dataset:
-            messages = example.get("messages", [])
-            if not isinstance(messages, list) or not messages:
-                continue
-
-            for idx, msg in enumerate(messages):
-                if not self._is_question_like_assistant_turn(messages, idx):
-                    continue
-
-                # Include context up to and including the assistant target turn.
-                clipped_messages = messages[: idx + 1]
-                text = self.tokenizer.apply_chat_template(
-                    clipped_messages,
-                    tokenize=False,
-                    add_generation_prompt=False,
-                )
-
-                token_count = len(self.tokenizer(text, add_special_tokens=False)["input_ids"])
-                if token_count > self.max_seq_length:
-                    skipped_too_long += 1
-                    continue
-
-                records.append({"text": text})
-
-        print(
-            f"Built {len(records)} {split_name} question-turn samples "
-            f"(skipped {skipped_too_long} over max_seq_length={self.max_seq_length})."
-        )
-
-        if not records:
-            raise ValueError(
-                f"No usable {split_name} samples after question-turn extraction. "
-                "Relax constraints or review dataset quality."
-            )
-
-        return Dataset.from_list(records)
-
     def prepare_datasets(self):
         """
         Load and format datasets for training.
@@ -195,12 +128,10 @@ class RecruiterDataLoader:
             f"and {len(eval_dataset)}/{original_eval_size} eval samples after validation."
         )
 
-        # Build training examples from assistant turns that match one-question behavior.
-        print("\nExtracting question-turn training samples...")
-        train_dataset = self._build_question_turn_dataset(train_dataset, "train")
-
-        print("Extracting question-turn evaluation samples...")
-        eval_dataset = self._build_question_turn_dataset(eval_dataset, "eval")
+        # Apply chat template to full conversations so we can compute loss on all assistant turns
+        print("\nFormatting full conversations...")
+        train_dataset = train_dataset.map(self.format_chat_template, desc="Formatting train set")
+        eval_dataset = eval_dataset.map(self.format_chat_template, desc="Formatting eval set")
 
         # Print sample
         if len(train_dataset) > 0:

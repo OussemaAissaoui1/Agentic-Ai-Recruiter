@@ -11,7 +11,7 @@ base_model: "meta-llama/Meta-Llama-3.1-8B-Instruct"  # Best for conversational t
 # base_model: "Qwen/Qwen2.5-7B-Instruct"            # Better role-playing
 # base_model: "meta-llama/Llama-3.2-3B-Instruct"    # Quick iteration
 
-output_dir: "/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training/output_v2/recruiter-persona-llama-3.1-8b"
+output_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b"
 
 # ============================================================================
 # Data Configuration
@@ -35,8 +35,8 @@ quantization:
 # LoRA Configuration
 # ============================================================================
 lora:
-  r: 16                          # Reduced rank to lower VRAM usage
-  lora_alpha: 32                 # Keep alpha ~= 2x rank
+  r: 32                          # Increased rank for 96GB VRAM capacity
+  lora_alpha: 64                 # Keep alpha ~= 2x rank
   lora_dropout: 0.05             # Low dropout for conversational tasks
   target_modules:                # Target all linear layers
     - "q_proj"
@@ -56,28 +56,28 @@ training:
   # Learning & Optimization
   learning_rate: 2.0e-4          # 2e-4 optimal for conversational tasks
   lr_scheduler_type: "cosine"    # Smooth decay
-  warmup_ratio: 0.03             # 3% warmup
+  warmup_ratio: 0.10             # 10% warmup is healthier for adapting persona logic
   weight_decay: 0.01
   optim: "paged_adamw_8bit"      # Memory-efficient optimizer
 
   # Batch Configuration
-  per_device_train_batch_size: 4
-  per_device_eval_batch_size: 4
-  gradient_accumulation_steps: 8   # Keep effective batch ~= 32 for quality
+  per_device_train_batch_size: 8   # Utilizing 96GB VRAM
+  per_device_eval_batch_size: 8    # Utilizing 96GB VRAM
+  gradient_accumulation_steps: 4   # Effective batch size ~= 32 for stability
 
   # Training Duration
-  num_train_epochs: 2.0            # Acts as fallback when max_steps is reached first
-  max_steps: 900                   # L4-friendly cap to prevent multi-day runs
+  num_train_epochs: 3.0            # 3 epochs is ideal for full-conversation SFT
+  # max_steps: 900                 # Removed max_steps so trainer automatically uses epochs
 
   # Sequence Length
-  max_seq_length: 896              # Better L4 throughput with minimal quality loss
-  packing: false                  # Keep conversations intact
+  max_seq_length: 4096             # Scaled up drastically to fit the entire interview context
+  packing: false                   # MUST be false to allow DataCollatorForCompletionOnlyLM to mask properly
 
   # Evaluation & Saving
   eval_strategy: "steps"
-  eval_steps: 300
+  eval_steps: 100                  # ~2-3 times per epoch (based on 7,758 samples / batch 32 = ~242 steps/epoch)
   save_strategy: "steps"
-  save_steps: 300
+  save_steps: 100                  # Align with eval_steps
   save_total_limit: 3              # Keep only 3 best checkpoints
   load_best_model_at_end: true
   metric_for_best_model: "eval_loss"
@@ -91,10 +91,10 @@ training:
   dataloader_num_workers: 4
 
   # Logging
-  logging_dir: "/teamspace/studios/this_studio/PFE/ai-recruiter/ml/recruiter-persona/training/output_v2/recruiter-persona-llama-3.1-8b/logs"
+  logging_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/logs"
   logging_steps: 25
   logging_first_step: true
-  report_to: "wandb"               # Enable W&B logging for training metrics
+  report_to: "wandb"               
 
   # Reproducibility
   seed: 42
@@ -106,7 +106,7 @@ training:
   ddp_find_unused_parameters: false
 
 # ============================================================================
-# Inference Configuration (for testing)
+# Inference Configuration 
 # ============================================================================
 inference:
   max_new_tokens: 256
@@ -128,21 +128,13 @@ wandb:
     - "qlora"
     - "llama-3.1"
   notes: "Fine-tuning Llama 3.1 8B for recruiter persona using QLoRA on L40 24GB"
-
-# ============================================================================
-# Hardware Configuration
-# ============================================================================
 hardware:
-  gpu: "L4"
-  vram_gb: 24
-  expected_usage_gb: 14-20
-  expected_training_time_hours: 8-16
-
-# ============================================================================
-# Expected Metrics
-# ============================================================================
+  gpu: "A100-80G or similar massive GPU"
+  vram_gb: 96
+  expected_usage_gb: 40-70
+  expected_training_time_hours: 4-8
 expected_metrics:
   initial_loss: 2.0-2.5
   final_train_loss: 0.4-0.9
   final_eval_loss: 0.5-1.0
-  total_steps: 900  # Capped for L4 runtime consistency
+  total_steps: 900  

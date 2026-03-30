@@ -94,8 +94,6 @@ def setup_model(config: dict, tokenizer):
     print("=" * 70 + "\n")
 
     return model
-
-
 def setup_training_args(config: dict) -> TrainingArguments:
     """Setup training arguments from config."""
     train_config = config["training"]
@@ -114,8 +112,8 @@ def setup_training_args(config: dict) -> TrainingArguments:
         per_device_eval_batch_size=train_config["per_device_eval_batch_size"],
         gradient_accumulation_steps=train_config["gradient_accumulation_steps"],
         # Training Duration
-        num_train_epochs=train_config["num_train_epochs"],
-        max_steps=train_config["max_steps"],
+        num_train_epochs=train_config.get("num_train_epochs", 3.0),
+        max_steps=train_config.get("max_steps", -1),
         # Evaluation & Saving
         eval_strategy=train_config["eval_strategy"],
         eval_steps=train_config["eval_steps"],
@@ -140,7 +138,6 @@ def setup_training_args(config: dict) -> TrainingArguments:
         seed=train_config.get("seed", 42),
         data_seed=train_config.get("data_seed", 42),
         remove_unused_columns=train_config.get("remove_unused_columns", True),
-        group_by_length=train_config.get("group_by_length", False),
     )
 
 
@@ -206,12 +203,13 @@ def main():
     )
 
     # 8.5 Setup assistant-only loss masking for strict recruiter generation.
-    # This trains only on assistant turns and ignores user/system text tokens.
-    response_template = "<|start_header_id|>assistant<|end_header_id|>\n\n"
-    instruction_template = "<|start_header_id|>user<|end_header_id|>\n\n"
+    # We pass exact token IDs to prevent Llama 3 tokenizer from incorrectly merging newlines
+    # which breaks the subset matching algorithm in DataCollator.
+    response_template = "<|start_header_id|>assistant<|end_header_id|>"
+    response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)
+    
     data_collator = DataCollatorForCompletionOnlyLM(
-        response_template=response_template,
-        instruction_template=instruction_template,
+        response_template=response_template_ids,
         tokenizer=tokenizer,
         mlm=False,
     )
@@ -227,8 +225,9 @@ def main():
         tokenizer=tokenizer,
         dataset_text_field="text",
         max_seq_length=config["training"]["max_seq_length"],
-        packing=config["training"]["packing"],
+        packing=False, # MUST be false when using DataCollatorForCompletionOnlyLM
         callbacks=callbacks,
+        neftune_noise_alpha=5.0, # Greatly reduces generic/repetitive responses for personas
     )
 
     # 10. Train
