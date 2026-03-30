@@ -1,0 +1,166 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        e:
+            ib28rn6ar6e6w5ui26a72tibs8r8fac4:
+                codePath: ai-recruiter/ml/recruiter-persona/training/train.py
+                codePathLocal: train.py
+                cpu_count: 24
+                cpu_count_logical: 48
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "1584163688448"
+                        used: "42521264128"
+                email: oussa612@gmail.com
+                executable: /home/zeus/miniconda3/envs/cloudspace/bin/python
+                git:
+                    commit: fc568bc6885a72e3aa282e5350418c7f07b3370c
+                    remote: https://github.com/OussemaAissaoui1/Agentic-Ai-Recruiter.git
+                gpu: NVIDIA RTX PRO 6000 Blackwell Server Edition
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 24064
+                      memoryTotal: "102641958912"
+                      name: NVIDIA RTX PRO 6000 Blackwell Server Edition
+                      uuid: GPU-875ca054-f267-be11-876d-a64a4a47e995
+                host: cs-01kmjm3rs4b9mgecpj2914z06d
+                memory:
+                    total: "189915291648"
+                os: Linux-6.8.0-1007-gcp-x86_64-with-glibc2.39
+                program: /teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/train.py
+                python: CPython 3.12.11
+                root: /teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training
+                startedAt: "2026-03-25T14:19:57.497905Z"
+                writerId: ib28rn6ar6e6w5ui26a72tibs8r8fac4
+        m: []
+        python_version: 3.12.11
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 41
+                - 49
+                - 51
+                - 53
+                - 71
+                - 84
+                - 98
+            "2":
+                - 1
+                - 5
+                - 11
+                - 41
+                - 49
+                - 51
+                - 53
+                - 71
+                - 84
+                - 98
+            "3":
+                - 13
+                - 15
+                - 16
+            "4": 3.12.11
+            "5": 0.25.1
+            "6": 5.3.0
+            "12": 0.25.1
+            "13": linux-x86_64
+base_model:
+    value: meta-llama/Meta-Llama-3.1-8B-Instruct
+eval_data:
+    value: ../data/final/recruiter_llama_eval_messages.jsonl
+expected_metrics:
+    value:
+        final_eval_loss: 0.5-1.0
+        final_train_loss: 0.4-0.9
+        initial_loss: 2.0-2.5
+        total_steps: 900
+hardware:
+    value:
+        expected_training_time_hours: 4-8
+        expected_usage_gb: 40-70
+        gpu: A100-80G or similar massive GPU
+        vram_gb: 96
+inference:
+    value:
+        do_sample: true
+        max_new_tokens: 256
+        repetition_penalty: 1.1
+        temperature: 0.7
+        top_k: 50
+        top_p: 0.9
+lora:
+    value:
+        bias: none
+        lora_alpha: 64
+        lora_dropout: 0.05
+        r: 32
+        target_modules:
+            - q_proj
+            - k_proj
+            - v_proj
+            - o_proj
+            - gate_proj
+            - up_proj
+            - down_proj
+        task_type: CAUSAL_LM
+method:
+    value: qlora
+output_dir:
+    value: /teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b
+quantization:
+    value:
+        bnb_4bit_compute_dtype: bfloat16
+        bnb_4bit_quant_type: nf4
+        bnb_4bit_use_double_quant: true
+        load_in_4bit: true
+train_data:
+    value: ../data/final/recruiter_llama_train_messages.jsonl
+training:
+    value:
+        bf16: true
+        data_seed: 42
+        dataloader_num_workers: 4
+        ddp_find_unused_parameters: false
+        eval_steps: 100
+        eval_strategy: steps
+        fp16: false
+        gradient_accumulation_steps: 4
+        gradient_checkpointing: true
+        greater_is_better: false
+        group_by_length: true
+        learning_rate: 0.0002
+        load_best_model_at_end: true
+        logging_dir: /teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/logs
+        logging_first_step: true
+        logging_steps: 25
+        lr_scheduler_type: cosine
+        max_seq_length: 4096
+        metric_for_best_model: eval_loss
+        num_train_epochs: 3
+        optim: paged_adamw_8bit
+        packing: false
+        per_device_eval_batch_size: 8
+        per_device_train_batch_size: 8
+        remove_unused_columns: true
+        report_to: wandb
+        save_steps: 100
+        save_strategy: steps
+        save_total_limit: 3
+        seed: 42
+        tf32: true
+        warmup_ratio: 0.1
+        weight_decay: 0.01
+wandb:
+    value:
+        name: llama-3.1-8b-qlora
+        notes: Fine-tuning Llama 3.1 8B for recruiter persona using QLoRA on L40 24GB
+        project: recruiter-persona-finetuning
+        tags:
+            - recruiter
+            - persona
+            - qlora
+            - llama-3.1

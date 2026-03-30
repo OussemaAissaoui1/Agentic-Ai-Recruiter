@@ -3,8 +3,8 @@
 ## Summary
 - Input rows: **10174**
 - Parsed transcripts: **10144**
-- Kept after cleaning + dedup: **8629** (84.81%)
-- Train / Eval: **7749 / 880**
+- Kept after cleaning + dedup: **8638** (84.90%)
+- Train / Eval: **7758 / 880**
 
 ## Cleaning Rules Applied
 - Parsed speaker turns and mapped `Interviewer` to assistant (`gpt`) and candidate to user (`human`).
@@ -17,7 +17,7 @@
 
 ## Top Filter Reasons
 - technical_question_style: 908
-- very_short_turn: 448
+- very_short_turn: 438
 - too_few_turns: 169
 - insufficient_role_balance: 169
 - very_long_turn: 88
@@ -27,22 +27,7 @@
 - too_many_turns: 10
 - no_interviewer_question: 2
 
-## Observations
-- The source is structurally rich and mostly parseable into multi-turn interview dialogue.
-- There is substantial template reuse in interviewer phrasing.
-- Decision labels are near-balanced (`select` vs `reject`), useful for optional downstream evaluation.
-- Role naming is inconsistent in capitalization (for example, `Software Engineer` vs `software engineer`).
-
-## Limitations and Risks
-- The dataset appears partially synthetic/template-generated; style diversity may be narrower than real interviews.
-- Short `Reason_for_decision` fields limit explainability signal if used for reward or critique tuning.
-- Candidate responses may include grammatical noise and can transfer informal patterns to the model.
-- Parsing assumes colon-prefixed speaker format; unusual formatting may be dropped.
-- Even after filtering, hidden bias can remain in role-specific language and selection outcomes.
-
 ## Output Files
-- `data_v2/final/recruiter_llama_train_messages.jsonl`
-- `data_v2/final/recruiter_llama_eval_messages.jsonl`
-- `data_v2/final/recruiter_llama_train_sharegpt.jsonl`
-- `data_v2/final/recruiter_llama_eval_sharegpt.jsonl`
-- `data_v2/final/recruiter_data_stats.json`
+- `/home/oussema/Desktop/data/f2/recruiter_llama_train_sharegpt.jsonl`
+- `/home/oussema/Desktop/data/f2/recruiter_llama_eval_sharegpt.jsonl`
+- `/home/oussema/Desktop/data/f2/recruiter_data_stats.json`

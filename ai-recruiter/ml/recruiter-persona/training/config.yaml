@@ -1,0 +1,140 @@
+# Recruiter Persona Fine-tuning Configuration
+# Optimized for L40 24GB GPU on Lightning AI Platform
+
+# ============================================================================
+# Model Configuration
+# ============================================================================
+base_model: "meta-llama/Meta-Llama-3.1-8B-Instruct"  # Best for conversational tasks
+
+# Alternative models (uncomment to use):
+# base_model: "mistralai/Mistral-7B-Instruct-v0.3"  # Faster training
+# base_model: "Qwen/Qwen2.5-7B-Instruct"            # Better role-playing
+# base_model: "meta-llama/Llama-3.2-3B-Instruct"    # Quick iteration
+
+output_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b"
+
+# ============================================================================
+# Data Configuration
+# ============================================================================
+train_data: "../data/final/recruiter_llama_train_messages.jsonl"
+eval_data: "../data/final/recruiter_llama_eval_messages.jsonl"
+
+# ============================================================================
+# Training Method
+# ============================================================================
+method: "qlora"  
+
+# QLoRA 4-bit Quantization Settings
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+# ============================================================================
+# LoRA Configuration
+# ============================================================================
+lora:
+  r: 32                          # Increased rank for 96GB VRAM capacity
+  lora_alpha: 64                 # Keep alpha ~= 2x rank
+  lora_dropout: 0.05             # Low dropout for conversational tasks
+  target_modules:                # Target all linear layers
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# ============================================================================
+# Training Hyperparameters
+# ============================================================================
+training:
+  # Learning & Optimization
+  learning_rate: 2.0e-4          # 2e-4 optimal for conversational tasks
+  lr_scheduler_type: "cosine"    # Smooth decay
+  warmup_ratio: 0.10             # 10% warmup is healthier for adapting persona logic
+  weight_decay: 0.01
+  optim: "paged_adamw_8bit"      # Memory-efficient optimizer
+
+  # Batch Configuration
+  per_device_train_batch_size: 8   # Utilizing 96GB VRAM
+  per_device_eval_batch_size: 8    # Utilizing 96GB VRAM
+  gradient_accumulation_steps: 4   # Effective batch size ~= 32 for stability
+
+  # Training Duration
+  num_train_epochs: 3.0            # 3 epochs is ideal for full-conversation SFT
+  # max_steps: 900                 # Removed max_steps so trainer automatically uses epochs
+
+  # Sequence Length
+  max_seq_length: 4096             # Scaled up drastically to fit the entire interview context
+  packing: false                   # MUST be false to allow DataCollatorForCompletionOnlyLM to mask properly
+
+  # Evaluation & Saving
+  eval_strategy: "steps"
+  eval_steps: 100                  # ~2-3 times per epoch (based on 7,758 samples / batch 32 = ~242 steps/epoch)
+  save_strategy: "steps"
+  save_steps: 100                  # Align with eval_steps
+  save_total_limit: 3              # Keep only 3 best checkpoints
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+
+  # Performance Optimizations
+  bf16: true                       # L4 supports bfloat16
+  tf32: true                       # Enable TF32 for faster training
+  fp16: false                      # Use bf16 instead
+  gradient_checkpointing: true     # Keep memory headroom on L4
+  dataloader_num_workers: 4
+
+  # Logging
+  logging_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/logs"
+  logging_steps: 25
+  logging_first_step: true
+  report_to: "wandb"               
+
+  # Reproducibility
+  seed: 42
+  data_seed: 42
+
+  # Advanced
+  remove_unused_columns: true
+  group_by_length: true           # Improves packing efficiency and throughput
+  ddp_find_unused_parameters: false
+
+# ============================================================================
+# Inference Configuration 
+# ============================================================================
+inference:
+  max_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  do_sample: true
+  repetition_penalty: 1.1
+
+# ============================================================================
+# Wandb Configuration 
+# ============================================================================
+wandb:
+  project: "recruiter-persona-finetuning"
+  name: "llama-3.1-8b-qlora"
+  tags:
+    - "recruiter"
+    - "persona"
+    - "qlora"
+    - "llama-3.1"
+  notes: "Fine-tuning Llama 3.1 8B for recruiter persona using QLoRA on L40 24GB"
+hardware:
+  gpu: "A100-80G or similar massive GPU"
+  vram_gb: 96
+  expected_usage_gb: 40-70
+  expected_training_time_hours: 4-8
+expected_metrics:
+  initial_loss: 2.0-2.5
+  final_train_loss: 0.4-0.9
+  final_eval_loss: 0.5-1.0
+  total_steps: 900  

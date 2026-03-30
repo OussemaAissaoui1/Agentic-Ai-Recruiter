@@ -1,0 +1,22 @@
+# Deep Learning Core (PyTorch 2.4+ recommended for SDPA/Flash Attention 2 native support on 96GB GPUs)
+torch>=2.4.0
+
+# Hugging Face Ecosystem (Updated for Llama 3.1 & QLoRA stability)
+transformers>=4.44.0
+peft>=0.11.0
+trl>=0.11.0
+datasets>=2.20.0
+accelerate>=0.33.0
+
+# Quantization & Optimization (Ampere/Hopper GPU optimizations)
+bitsandbytes>=0.43.3
+
+# (Optional but highly recommended for 4096 context length on A100/H100)
+# flash-attn>=2.6.0  
+
+# Tracking & Utilities
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+scipy>=1.11.0
+pyyaml>=6.0
+wandb>=0.17.0
