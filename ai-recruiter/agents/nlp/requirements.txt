@@ -1,0 +1,25 @@
+# Core inference
+vllm>=0.6.0
+transformers>=4.40.0
+torch>=2.1.0
+accelerate>=0.25.0
+
+# Response scorer (mini model on CPU)
+# Uses transformers + torch (already listed above)
+
+# TTS
+kokoro>=0.9
+soundfile>=0.12.0
+
+# Demo
+streamlit>=1.30.0
+
+# HTTP client for testing
+httpx>=0.25.0
+
+# Server
+fastapi>=0.100.0
+uvicorn>=0.20.0
+
+# Utilities
+numpy>=1.24.0
