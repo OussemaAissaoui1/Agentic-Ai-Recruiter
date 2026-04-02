@@ -6,6 +6,16 @@ Production-ready engine with:
 - Lazy loading with timeout protection
 - Process-safe initialization
 - Graceful degradation
+
+Bug fixes (v7.1):
+- vLLM engine init now wrapped in run_with_timeout so load_timeout_sec is
+  actually enforced (previously the parameter existed but was never used,
+  meaning a stuck CUDA kernel could block the process forever).
+- Tokenizer loading now falls back to the base Hub model ID
+  ("meta-llama/Meta-Llama-3.1-8B-Instruct") when the local merged-weight
+  path doesn't contain tokenizer files. Fine-tuned models merged with
+  merge_kit often lack a standalone tokenizer directory; using the base
+  tokenizer is safe because the vocabulary is identical.
 """
 
 from __future__ import annotations
@@ -25,6 +35,9 @@ from transformers import AutoTokenizer
 # Module-level lock to prevent multiple simultaneous engine initializations
 _ENGINE_INIT_LOCK = threading.Lock()
 _GLOBAL_ENGINE_INSTANCE = None
+
+# Hub model ID used as tokenizer fallback when the local path has no tokenizer
+_LLAMA_31_8B_HUB_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 
 
 @dataclass(frozen=True)
@@ -57,15 +70,12 @@ def check_gpu_status() -> GPUStatus:
         if gpu_count == 0:
             return GPUStatus(False, 0, 0, 0, [], "No GPUs found")
 
-        # Get memory info for primary GPU
         free_mem = torch.cuda.mem_get_info(0)[0] / (1024**3)
         total_mem = torch.cuda.mem_get_info(0)[1] / (1024**3)
 
-        # Check for blocking processes (exclude current process and its children)
         current_pid = os.getpid()
         protected_pids = {current_pid}
 
-        # Get all child processes of current process
         try:
             result = subprocess.run(
                 ["pgrep", "-P", str(current_pid)],
@@ -88,7 +98,6 @@ def check_gpu_status() -> GPUStatus:
                 for p in result.stdout.strip().split('\n'):
                     if p.strip():
                         pid = int(p.strip())
-                        # Only report as blocking if NOT current process or its children
                         if pid not in protected_pids:
                             blocking_pids.append(pid)
         except Exception:
@@ -110,10 +119,8 @@ def cleanup_gpu_processes(force: bool = False) -> int:
     killed = 0
     current_pid = os.getpid()
 
-    # Get current process and all its children to avoid killing ourselves
     protected_pids = {current_pid}
     try:
-        # Get all child processes of current process
         result = subprocess.run(
             ["pgrep", "-P", str(current_pid)],
             capture_output=True, text=True, timeout=2
@@ -139,11 +146,9 @@ def cleanup_gpu_processes(force: bool = False) -> int:
                     pid = int(parts[0].strip())
                     name = parts[1].strip().lower()
 
-                    # Skip current process and its children (including EngineCore)
                     if pid in protected_pids:
                         continue
 
-                    # Kill vLLM processes, EngineCore, or any Python using GPU
                     should_kill = (
                         'vllm' in name or
                         'enginecore' in name or
@@ -160,7 +165,6 @@ def cleanup_gpu_processes(force: bool = False) -> int:
                         except PermissionError:
                             print(f"[gpu] Cannot kill {pid} (permission denied)")
 
-        # Also try pkill for vLLM subprocesses (but exclude our own)
         if force:
             subprocess.run(["pkill", "-9", "-f", "vllm"], capture_output=True, timeout=5)
             subprocess.run(["pkill", "-9", "-f", "EngineCore"], capture_output=True, timeout=5)
@@ -168,7 +172,6 @@ def cleanup_gpu_processes(force: bool = False) -> int:
     except Exception as e:
         print(f"[gpu] Cleanup error: {e}")
 
-    # Clear CUDA cache
     try:
         import torch
         if torch.cuda.is_available():
@@ -181,18 +184,21 @@ def cleanup_gpu_processes(force: bool = False) -> int:
 
 @contextmanager
 def timeout_context(seconds: int, error_msg: str = "Operation timed out"):
-    """Context manager for timing out operations. Thread-safe version."""
-    # Note: This is a no-op timeout for thread compatibility.
-    # The actual timeout is handled by the caller using asyncio.wait_for or similar.
-    # This context manager is kept for API compatibility but doesn't enforce timeout.
+    """
+    Context manager for timing out operations.
+    Kept for API compatibility — actual enforcement is via run_with_timeout().
+    """
     yield
 
 
 def run_with_timeout(func, timeout_sec: int, error_msg: str = "Operation timed out"):
-    """Run a function with timeout using threading. Works in non-main threads."""
-    import threading
-    import concurrent.futures
+    """
+    Run a function with timeout using threading. Works in non-main threads.
 
+    Spawns a daemon thread and joins it with the given timeout.  If the thread
+    is still alive after the deadline, raises TimeoutError.  Unlike
+    signal.alarm this is safe to call from any thread.
+    """
     result = [None]
     exception = [None]
 
@@ -202,12 +208,11 @@ def run_with_timeout(func, timeout_sec: int, error_msg: str = "Operation timed o
         except Exception as e:
             exception[0] = e
 
-    thread = threading.Thread(target=wrapper)
+    thread = threading.Thread(target=wrapper, daemon=True)
     thread.start()
     thread.join(timeout=timeout_sec)
 
     if thread.is_alive():
-        # Thread is still running - we can't kill it, but we can raise timeout
         raise TimeoutError(error_msg)
 
     if exception[0] is not None:
@@ -227,6 +232,10 @@ class VLLMRecruiterEngine:
         "[CANDIDATE", "[TOO MANY", "[SKIP",
         "[END", "[EVALUATION", "[ANALYSIS",
         "[Start your", "[Say '",
+        "[Looks", "[Pauses", "[Smiles", "[Nods",
+        "[Try to", "[Interview",
+        "Post-interview", "Here's how I'd",
+        "Here's my response", "Here is my response",
     )
 
     TERMINATION_MARKERS: Tuple[str, ...] = (
@@ -243,6 +252,9 @@ class VLLMRecruiterEngine:
         "notes:", "evaluation:", "assessment:", "summary:",
         "the candidate", "this candidate",
         "based on this conversation",
+        "interview ends abruptly", "let's keep the conversation respectful",
+        "level of communication skills", "communication skills we require",
+        "i'm dr.", "i am dr.",
     )
 
     FILLER_STARTS: Tuple[str, ...] = (
@@ -266,15 +278,17 @@ class VLLMRecruiterEngine:
         "pre-trained model like",
     )
 
-    # Minimum GPU memory required (GB)
     MIN_GPU_MEMORY_GB: float = 12.0
+
+    # Base model ID used as tokenizer fallback for merged/fine-tuned checkpoints
+    TOKENIZER_FALLBACK_HUB_ID: str = _LLAMA_31_8B_HUB_ID
 
     def __init__(
         self,
         model_path: str,
         dtype: str = "bfloat16",
         max_model_len: int = 2048,
-        gpu_memory_utilization: float = 0.60,  # Reduced for stability with fragmented GPU memory
+        gpu_memory_utilization: float = 0.60,
         tensor_parallel_size: int = 0,
         auto_cleanup: bool = True,
         load_timeout_sec: int = 180,
@@ -288,7 +302,6 @@ class VLLMRecruiterEngine:
         self._auto_cleanup = auto_cleanup
         self._load_timeout = load_timeout_sec
 
-        # Lazy loading state
         self._engine = None
         self._tokenizer = None
         self._initialized = False
@@ -299,12 +312,10 @@ class VLLMRecruiterEngine:
 
     @property
     def is_ready(self) -> bool:
-        """Check if engine is initialized and ready."""
         return self._initialized and self._engine is not None
 
     @property
     def engine(self):
-        """Lazy-load the vLLM engine on first access."""
         if not self._initialized:
             self._initialize_engine()
         if self._engine is None:
@@ -313,14 +324,45 @@ class VLLMRecruiterEngine:
 
     @property
     def tokenizer(self):
-        """Get the tokenizer, loading if necessary."""
+        """
+        Get the tokenizer.
+
+        Loading order:
+          1. Local path (model_path) — fast, works offline after first run.
+          2. Hub fallback (TOKENIZER_FALLBACK_HUB_ID) — used when the local
+             merged checkpoint lacks a tokenizer directory, which is common
+             for models produced by merge-kit or PEFT merge operations.
+        """
         if self._tokenizer is None:
-            self._tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+            self._tokenizer = self._load_tokenizer()
             self._setup_stop_tokens()
         return self._tokenizer
 
+    def _load_tokenizer(self) -> AutoTokenizer:
+        """Try local path first; fall back to Hub ID on failure."""
+        # Attempt 1: local path
+        try:
+            tok = AutoTokenizer.from_pretrained(
+                self.model_path, local_files_only=True
+            )
+            print(f"[vllm] Tokenizer loaded from local path: {self.model_path}")
+            return tok
+        except Exception as local_err:
+            print(f"[vllm] Local tokenizer not found ({local_err}). "
+                  f"Falling back to Hub: {self.TOKENIZER_FALLBACK_HUB_ID}")
+
+        # Attempt 2: Hub fallback
+        try:
+            tok = AutoTokenizer.from_pretrained(self.TOKENIZER_FALLBACK_HUB_ID)
+            print(f"[vllm] Tokenizer loaded from Hub: {self.TOKENIZER_FALLBACK_HUB_ID}")
+            return tok
+        except Exception as hub_err:
+            raise RuntimeError(
+                f"Failed to load tokenizer from local path ({self.model_path}) "
+                f"and Hub ({self.TOKENIZER_FALLBACK_HUB_ID}): {hub_err}"
+            )
+
     def _setup_stop_tokens(self) -> None:
-        """Setup stop token IDs from tokenizer."""
         self.stop_token_ids = []
         if self._tokenizer.eos_token_id is not None:
             self.stop_token_ids.append(self._tokenizer.eos_token_id)
@@ -329,19 +371,16 @@ class VLLMRecruiterEngine:
             self.stop_token_ids.append(eot)
 
     def _initialize_engine(self) -> None:
-        """Initialize the vLLM engine with proper checks and cleanup."""
+        """Initialize the vLLM engine with proper checks, cleanup, and timeout."""
         global _GLOBAL_ENGINE_INSTANCE
 
         if self._initialized:
             return
 
-        # Use module-level lock to prevent multiple simultaneous initializations
         with _ENGINE_INIT_LOCK:
-            # Double-check after acquiring lock
             if self._initialized:
                 return
 
-            # If another instance already created the engine, reuse it
             if _GLOBAL_ENGINE_INSTANCE is not None:
                 print("[vllm] Reusing existing engine instance")
                 self._engine = _GLOBAL_ENGINE_INSTANCE
@@ -366,9 +405,9 @@ class VLLMRecruiterEngine:
             # Step 2: Cleanup blocking processes if needed
             if gpu_status.blocking_pids and self._auto_cleanup:
                 print(f"[vllm] Cleaning up {len(gpu_status.blocking_pids)} blocking processes...")
-                killed = cleanup_gpu_processes(force=True)  # Use force to kill any GPU-using Python process
+                killed = cleanup_gpu_processes(force=True)
                 if killed > 0:
-                    time.sleep(3)  # Wait for GPU memory to be released
+                    time.sleep(3)
                     gpu_status = check_gpu_status()
                     print(f"[vllm] After cleanup: free={gpu_status.free_memory_gb:.1f}GB")
 
@@ -381,17 +420,20 @@ class VLLMRecruiterEngine:
                 self._initialized = True
                 raise RuntimeError(self._init_error)
 
-            # Step 4: Load tokenizer first (fast, can fail early)
+            # Step 4: Load tokenizer (fast, fails early on bad paths)
             print(f"[vllm] Loading tokenizer from {self.model_path}...")
             try:
-                _ = self.tokenizer  # Trigger lazy load
+                _ = self.tokenizer  # Trigger lazy load via property
             except Exception as e:
                 self._init_error = f"Failed to load tokenizer: {e}"
                 self._initialized = True
                 raise RuntimeError(self._init_error)
 
-            # Step 5: Initialize vLLM engine
-            print(f"[vllm] Initializing vLLM engine...")
+            # Step 5: Initialize vLLM engine — wrapped in run_with_timeout so
+            # that load_timeout_sec is actually enforced.  Without this wrapper
+            # a stuck CUDA kernel or corrupted model file hangs the process
+            # indefinitely and the timeout parameter has no effect.
+            print(f"[vllm] Initializing vLLM engine (timeout={self._load_timeout}s)...")
             try:
                 from vllm import AsyncLLMEngine, AsyncEngineArgs
 
@@ -405,17 +447,39 @@ class VLLMRecruiterEngine:
                     enable_chunked_prefill=True,
                     max_num_batched_tokens=self.max_model_len,
                     enable_prefix_caching=True,
-                    enforce_eager=True,  # Disable CUDA graphs to prevent OOM during compilation
+                    enforce_eager=True,
                 )
 
-                # Initialize engine directly (timeout handled at higher level)
-                self._engine = AsyncLLMEngine.from_engine_args(engine_args)
-                _GLOBAL_ENGINE_INSTANCE = self._engine  # Store for reuse
+                # -----------------------------------------------------------------
+                # FIX: enforce the timeout using run_with_timeout.
+                # Previously AsyncLLMEngine.from_engine_args was called directly
+                # so self._load_timeout had zero effect — a hung model load would
+                # block forever.  Now if it doesn't finish within load_timeout_sec
+                # we raise TimeoutError and the caller gets a clean error.
+                # -----------------------------------------------------------------
+                def _create_engine():
+                    return AsyncLLMEngine.from_engine_args(engine_args)
 
+                self._engine = run_with_timeout(
+                    _create_engine,
+                    timeout_sec=self._load_timeout,
+                    error_msg=(
+                        f"vLLM engine init timed out after {self._load_timeout}s. "
+                        "Check GPU memory, model path, and CUDA installation."
+                    ),
+                )
+
+                _GLOBAL_ENGINE_INSTANCE = self._engine
                 load_time = time.time() - t0
                 print(f"[vllm] Engine ready in {load_time:.1f}s")
                 self._initialized = True
                 self._init_error = None
+
+            except TimeoutError as te:
+                self._init_error = str(te)
+                self._initialized = True
+                print(f"[vllm] TIMEOUT: {te}")
+                raise RuntimeError(self._init_error)
 
             except Exception as e:
                 self._init_error = f"Engine initialization failed: {e}"
@@ -451,24 +515,19 @@ class VLLMRecruiterEngine:
         instruction: Optional[str] = None,
     ) -> str:
         messages = [{"role": "system", "content": system_prompt}]
-        messages.append({
-            "role": "user",
-            "content": (
-                "RULES: Only ask about CV items. Never evaluate. "
-                "Never end interview. One question, stop after '?'."
-            ),
-        })
-        messages.append({
-            "role": "assistant",
-            "content": "Understood. One CV-specific question per turn.",
-        })
+
         for c, r in history:
             messages.append({"role": "user", "content": c})
             messages.append({"role": "assistant", "content": r})
 
-        text = candidate_input
+        # Build the candidate's latest input
+        if history:
+            text = f"{candidate_input}"
+        else:
+            text = candidate_input
+            
         if instruction:
-            text = f"{candidate_input}\n\n{instruction}"
+            text = f"{text}\n\n{instruction}"
         messages.append({"role": "user", "content": text})
 
         return self.tokenizer.apply_chat_template(
@@ -554,10 +613,7 @@ class VLLMRecruiterEngine:
         repetition_penalty: float = 1.15,
         history_window: int = 6,
     ):
-        """
-        Stream tokens as they're generated for real-time display.
-        Yields partial text incrementally.
-        """
+        """Stream tokens as they're generated for real-time display."""
         hist = history[-history_window:]
         prompt = self._build_prompt(system_prompt, hist, candidate_input, instruction)
 
@@ -581,10 +637,8 @@ class VLLMRecruiterEngine:
             out = ro.outputs[0]
             current_text = out.text or ""
 
-            # Yield only the new characters
             if len(current_text) > len(prev_text):
                 new_chars = current_text[len(prev_text):]
-                # Quick clean of special tokens
                 for token in ("<|eot_id|>", "<|end_of_text|>"):
                     new_chars = new_chars.replace(token, "")
                 if new_chars:
@@ -599,6 +653,17 @@ class VLLMRecruiterEngine:
         c = re.sub(r"<think>.*?</think>", "", c, flags=re.DOTALL)
         c = c.strip()
 
+        # Strip meta-commentary prefixes like "Here's how I'd respond:"
+        for prefix in ("here's how i'd respond:", "here's my response:",
+                       "here is my response:", "here's how i would respond:",
+                       "i would say:", "my response:", "here's what i'd say:"):
+            idx = c.lower().find(prefix)
+            if idx != -1 and idx < 60:
+                c = c[idx + len(prefix):].strip()
+
+        # Strip stage directions like [Looks concerned], [Pauses]
+        c = re.sub(r"\[(?!http)[^\]]{1,80}\]", "", c).strip()
+
         for m in self.INSTRUCTION_MARKERS:
             i = c.find(m)
             if i != -1:
@@ -612,6 +677,7 @@ class VLLMRecruiterEngine:
             if i != -1:
                 c = c[:i].strip()
 
+        # Strip post-interview notes / internal monologue
         cl = c.lower()
         for m in self.TERMINATION_MARKERS:
             i = cl.find(m)
@@ -619,6 +685,16 @@ class VLLMRecruiterEngine:
                 s = c.rfind(".", 0, i)
                 c = c[:s].strip() if s > 10 else ""
                 cl = c.lower()
+
+        # Strip lines starting with "*" or "Post-interview" (leaked notes)
+        lines = c.split("\n")
+        clean_lines = []
+        for line in lines:
+            ls = line.strip().lower()
+            if ls.startswith("post-interview") or ls.startswith("* ") or ls.startswith("notes:"):
+                break
+            clean_lines.append(line)
+        c = "\n".join(clean_lines).strip()
 
         qi = c.find("?")
         if qi != -1:

@@ -1,0 +1,125 @@
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    AI RECRUITER INTERVIEW PIPELINE                      │
+│                         (Enhanced v2 with Refiner)                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. CANDIDATE ANSWERS                                                   │
+│    "I built a Neo4j graph database to handle the relationship          │
+│     network. We chose it for performance reasons..."                   │
+└────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌────────────────────────────────────────────────────────────────────────┐
+│ 2. RESPONSE SCORER (Qwen 1.5B on CPU) - ~300-500ms                    │
+│    ✓ NOW WORKING! (Previously ran but output was ignored)              │
+│                                                                         │
+│    Analyzes Answer:                                                     │
+│    • answer_quality: "detailed"                                         │
+│    • candidate_engagement: "engaged"                                    │
+│    • knowledge_level: "demonstrated"                                    │
+│    • suggested_action: "move_to_new_topic"                             │
+│    • question_focus: "scaling challenges"                              │
+│    • knowledge_gaps: ["performance optimization", "data modeling"]     │
+│    • acknowledgment: "So you used Neo4j for the graph layer."          │
+└────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌────────────────────────────────────────────────────────────────────────┐
+│ 3. INTERVIEW STATE TRACKER                                             │
+│    • Uses scorer analysis (not basic heuristics)                        │
+│    • Decides: Move to new topic                                         │
+│    • Builds instruction with acknowledgment                             │
+│                                                                         │
+│    Instruction: [Start with: "So you used Neo4j for the graph layer."  │
+│                  | Move to: React Frontend | Focus on: State mgmt]     │
+└────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌────────────────────────────────────────────────────────────────────────┐
+│ 4. MAIN LLM (Fine-tuned Llama 3.1 8B on GPU) - ~400-800ms             │
+│    • Uses scorer analysis in context                                    │
+│    • Sees answer labeled as "response to previous question"            │
+│    • Includes acknowledgment from instruction                           │
+│    • References CV items                                                │
+│                                                                         │
+│    Generates: "So you used Neo4j for the graph layer. Tell me about   │
+│                your React frontend implementation."                     │
+└────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌────────────────────────────────────────────────────────────────────────┐
+│ 5. QUESTION REFINER (Qwen 1.5B on CPU) - ~400-800ms [NEW!]            │
+│    • Takes original question + scorer analysis                          │
+│    • Makes question DEEPER and more SPECIFIC                            │
+│    • Maintains warm, professional tone                                  │
+│    • Removes generic phrasing                                           │
+│                                                                         │
+│    Refines to: "So you used Neo4j for the graph layer. What specific  │
+│                 challenges did you face with React state management    │
+│                 when scaling to thousands of concurrent users?"         │
+│                                                                         │
+│    Refinement Type: "deepened"                                          │
+│    Improvements: "Added specificity (state mgmt, scale), probes        │
+│                   technical challenges vs surface-level description"   │
+└────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌────────────────────────────────────────────────────────────────────────┐
+│ 6. TTS ENGINE (Kokoro on CPU) - ~200-400ms                            │
+│    • Synthesizes refined question to audio                              │
+│    • Can run in parallel with step 5 for lower latency                 │
+└────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌────────────────────────────────────────────────────────────────────────┐
+│ 7. FINAL OUTPUT                                                         │
+│    Text: "So you used Neo4j for the graph layer. What specific        │
+│           challenges did you face with React state management when     │
+│           scaling to thousands of concurrent users?"                    │
+│                                                                         │
+│    Audio: [WAV bytes for TTS playback]                                 │
+│                                                                         │
+│    Metadata:                                                            │
+│    • scorer_output: {...}  ← Now populated!                            │
+│    • refiner_output: {...} ← New!                                      │
+│    • metrics: {latency, tokens, etc.}                                  │
+└────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+
+KEY IMPROVEMENTS:
+
+✅ BEFORE (Broken):
+   Scorer ran but output was NEVER used → wasted compute, bad decisions
+   
+✅ AFTER (Fixed):
+   Scorer output drives all decisions → smart analysis, good instructions
+
+✅ NEW FEATURE:
+   Question Refiner transforms generic → specific, deep, unique questions
+
+═══════════════════════════════════════════════════════════════════════════
+
+RESOURCE ALLOCATION:
+
+GPU (High Priority):
+  • Main LLM (vLLM optimized, fine-tuned Llama 3.1 8B)
+
+CPU (Parallel Processing):
+  • Response Scorer (Qwen 1.5B) - Analyzes answers
+  • Question Refiner (Qwen 1.5B) - Enhances questions  [NEW]
+  • TTS Engine (Kokoro) - Synthesizes speech
+
+═══════════════════════════════════════════════════════════════════════════
+
+PERFORMANCE:
+
+Total Latency: ~800-1200ms (with parallelization)
+  • Scorer:  300-500ms (parallel with GPU work)
+  • Main LLM: 400-800ms (GPU, vLLM optimized)
+  • Refiner: 400-800ms (CPU, new step)
+  • TTS:     200-400ms (CPU, parallel with refiner)
+
+Quality Improvements:
+  • ✅ Questions acknowledge answers (scorer-driven)
+  • ✅ Questions are deeper and more technical (refiner)
+  • ✅ Questions reference specific CV items (refiner)
+  • ✅ Questions avoid generic phrasing (refiner)
+  • ✅ Warm, professional recruiter tone maintained
+
+═══════════════════════════════════════════════════════════════════════════

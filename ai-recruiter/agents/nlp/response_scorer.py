@@ -1,6 +1,4 @@
 """
-Response Scorer : 
-    
 Response Scorer — Mini Model for Interview Answer Assessment
 
 Replaces the rule-based keyword analysis with a small LLM (0.5B-1.5B)
@@ -11,15 +9,34 @@ is minimal (~300-500ms on CPU, hidden behind GPU work).
 
 Architecture:
     CPU Thread Pool → Small LLM → JSON Assessment → Injected into recruiter prompt
+
+Bug fixes (v2):
+- Added HuggingFace Hub HTTP timeout via env var to prevent indefinite hangs
+  when the Hub is slow or when downloading large model files for the first time.
+- Wrapped from_pretrained calls in a thread with a hard deadline (load_timeout_sec)
+  so a stuck download raises TimeoutError instead of blocking forever.
+- Increased score() timeout from 2s → 3s to accommodate Qwen2.5-1.5B on slow CPUs.
 """
 
 from __future__ import annotations
 
+import os
 import json
 import asyncio
+import threading
 import time
 from typing import Optional, List, Tuple, Dict, Any
 from dataclasses import dataclass, field
+
+# -----------------------------------------------------------------
+# Set HuggingFace Hub HTTP timeout BEFORE any HF imports.
+# The default is effectively infinite which causes silent hangs
+# when the Hub CDN is unreachable or the connection drops mid-download.
+# 30 s per HTTP request is generous for a chunk download; the retry
+# logic in huggingface_hub will re-attempt on transient failures.
+# -----------------------------------------------------------------
+os.environ.setdefault("HUGGINGFACE_HUB_HTTP_TIMEOUT", "30")
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
 
 
 @dataclass(frozen=True)
@@ -89,6 +106,35 @@ _DEFAULT_OUTPUT = ScorerOutput(
 )
 
 
+def _run_with_timeout(func, timeout_sec: int, error_msg: str = "Operation timed out"):
+    """
+    Run *func* in a daemon thread; raise TimeoutError if it doesn't finish
+    within *timeout_sec* seconds.
+
+    This is the same pattern used in vllm_engine.py — a thread-based timeout
+    that works correctly even when called from a non-main thread (unlike
+    signal.alarm which is main-thread only).
+    """
+    result_holder: list = [None]
+    exc_holder: list = [None]
+
+    def _wrapper():
+        try:
+            result_holder[0] = func()
+        except Exception as exc:
+            exc_holder[0] = exc
+
+    t = threading.Thread(target=_wrapper, daemon=True)
+    t.start()
+    t.join(timeout=timeout_sec)
+
+    if t.is_alive():
+        raise TimeoutError(error_msg)
+    if exc_holder[0] is not None:
+        raise exc_holder[0]
+    return result_holder[0]
+
+
 class ResponseScorer:
     """
     Small LLM that analyzes candidate responses on CPU.
@@ -121,13 +167,13 @@ class ResponseScorer:
 ## Conversation context:
 {context}
 
-Produce this exact JSON:
+Produce this exact JSON (pick ONE value for each field, do NOT combine with |):
 {{
-    "answer_quality": "vague|partial|detailed|off_topic|nonsense|skip_request|clarification_request",
+    "answer_quality": "<pick ONE: vague OR partial OR detailed OR off_topic OR nonsense OR skip_request OR clarification_request>",
     "current_topic": "what specific CV item is being discussed",
-    "candidate_engagement": "engaged|confused|evasive|enthusiastic|frustrated|bored",
-    "knowledge_level": "demonstrated|surface_level|uncertain|no_evidence|strong",
-    "suggested_action": "follow_up_same_topic|move_to_new_topic|ask_simpler|ask_for_example|rephrase",
+    "candidate_engagement": "<pick ONE: engaged OR confused OR evasive OR enthusiastic OR frustrated OR bored>",
+    "knowledge_level": "<pick ONE: demonstrated OR surface_level OR uncertain OR no_evidence OR strong>",
+    "suggested_action": "<pick ONE: follow_up_same_topic OR move_to_new_topic OR ask_simpler OR ask_for_example OR rephrase>",
     "question_focus": "specific technical aspect to ask about next",
     "knowledge_gaps": ["gap1", "gap2"],
     "acknowledgment": "brief natural 5-10 word acknowledgment of what they said",
@@ -138,16 +184,16 @@ Rules for acknowledgment:
 - Reference something SPECIFIC they said
 - Do NOT use "great", "interesting", "thanks"
 - Examples: "So you used Neo4j for the graph layer.", "The SAM integration handled boundary detection."
-- If answer was vague, skip acknowledgment (empty string)
+- If answer was vague or evasive, use empty string ""
 
 Rules for suggested_action:
 - "vague" or "partial" → "follow_up_same_topic" or "ask_for_example"
 - "detailed" or "strong" → "move_to_new_topic"
 - "confused" or "clarification_request" → "ask_simpler" or "rephrase"
-- "skip_request" → "move_to_new_topic"
+- "skip_request" or "evasive" → "move_to_new_topic"
 - "nonsense" → "ask_simpler"
 
-Respond with ONLY the JSON."""
+Respond with ONLY the JSON. Pick exactly ONE value per field."""
 
     def __init__(
         self,
@@ -155,6 +201,7 @@ Respond with ONLY the JSON."""
         device: str = "cpu",
         max_cv_chars: int = 600,
         max_context_chars: int = 800,
+        load_timeout_sec: int = 300,   # 5 min: enough for first-time download (~1 GB)
     ):
         self.device = device
         self._max_cv_chars = max_cv_chars
@@ -165,19 +212,42 @@ Respond with ONLY the JSON."""
             import torch
             from transformers import AutoTokenizer, AutoModelForCausalLM
 
-            print(f"[scorer] Loading {model_name} on {device}...")
+            print(f"[scorer] Loading {model_name} on {device} "
+                  f"(timeout={load_timeout_sec}s)...")
             t0 = time.time()
 
-            self._tokenizer = AutoTokenizer.from_pretrained(
-                model_name, trust_remote_code=True
-            )
-            self._model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype=torch.float32,
-                device_map=device,
-                trust_remote_code=True,
-            )
-            self._model.eval()
+            # ---------------------------------------------------------
+            # Wrap the download/load in a thread with a hard deadline.
+            # Without this, a slow Hub connection or a corrupt cache
+            # causes the process to hang indefinitely with no feedback.
+            # ---------------------------------------------------------
+            def _load_models():
+                tok = AutoTokenizer.from_pretrained(
+                    model_name, trust_remote_code=True
+                )
+                mdl = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    device_map=device,
+                    trust_remote_code=True,
+                )
+                mdl.eval()
+                return tok, mdl
+
+            try:
+                self._tokenizer, self._model = _run_with_timeout(
+                    _load_models,
+                    timeout_sec=load_timeout_sec,
+                    error_msg=(
+                        f"Scorer model load timed out after {load_timeout_sec}s. "
+                        "Check your internet connection or use a cached model."
+                    ),
+                )
+            except TimeoutError as te:
+                print(f"[scorer] WARNING: {te}")
+                print("[scorer] Falling back to rule-based analysis")
+                self._ready = False
+                return
 
             param_count = sum(p.numel() for p in self._model.parameters()) / 1e6
             load_time = time.time() - t0
@@ -220,7 +290,14 @@ Respond with ONLY the JSON."""
         Analyze the candidate's latest answer asynchronously.
 
         Runs CPU inference in a thread pool to avoid blocking the event loop.
-        Called in PARALLEL with other async work.
+        Called in PARALLEL with other async work (see agent.py).
+
+        The timeout here is intentionally generous (3 s) because:
+        - Qwen2.5-1.5B on a slow CPU can take ~800 ms
+        - We want to maximise the chance the scorer finishes before the GPU
+          has even started loading the prompt, so the instruction is useful.
+        - In agent.py we wrap this call in asyncio.wait_for(timeout=0.9s)
+          to cap the *wait* time, so a slow scorer never blocks generation.
         """
         if not self._ready:
             return _DEFAULT_OUTPUT
@@ -228,7 +305,6 @@ Respond with ONLY the JSON."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No running loop, use sync version directly
             return self._score_sync(candidate_cv, conversation_history, latest_answer)
 
         try:
@@ -240,11 +316,11 @@ Respond with ONLY the JSON."""
                     conversation_history,
                     latest_answer,
                 ),
-                timeout=3.0,  # Increased from 2s for larger model
+                timeout=5.0,
             )
             return result
         except asyncio.TimeoutError:
-            print("[scorer] Timed out (>3s), using default")
+            print("[scorer] Timed out (>5s), using default")
             return _DEFAULT_OUTPUT
         except Exception as e:
             print(f"[scorer] Error: {e}")
@@ -317,6 +393,11 @@ Respond with ONLY the JSON."""
         s = re.sub(r"\bNone\b", "null", s)
         return s
 
+    _VALID_QUALITY = {"vague", "partial", "detailed", "off_topic", "nonsense", "skip_request", "clarification_request"}
+    _VALID_ENGAGEMENT = {"engaged", "confused", "evasive", "enthusiastic", "frustrated", "bored"}
+    _VALID_KNOWLEDGE = {"demonstrated", "surface_level", "uncertain", "no_evidence", "strong"}
+    _VALID_ACTION = {"follow_up_same_topic", "move_to_new_topic", "ask_simpler", "ask_for_example", "rephrase"}
+
     def _parse_output(self, text: str, latency_ms: float) -> ScorerOutput:
         try:
             json_start = text.find("{")
@@ -327,12 +408,25 @@ Respond with ONLY the JSON."""
                     data = json.loads(raw_json)
                 except json.JSONDecodeError:
                     data = json.loads(self._repair_json(raw_json))
+
+                # Sanitize: if model output pipe-separated enum, take first valid value
+                def _pick_one(val: str, valid_set: set, default: str) -> str:
+                    if not val or not isinstance(val, str):
+                        return default
+                    if "|" in val:
+                        for part in val.split("|"):
+                            part = part.strip()
+                            if part in valid_set:
+                                return part
+                        return default
+                    return val if val in valid_set else default
+
                 return ScorerOutput(
-                    answer_quality=data.get("answer_quality", "unknown"),
+                    answer_quality=_pick_one(data.get("answer_quality", ""), self._VALID_QUALITY, "vague"),
                     current_topic=data.get("current_topic", "unknown"),
-                    candidate_engagement=data.get("candidate_engagement", "neutral"),
-                    knowledge_level=data.get("knowledge_level", "uncertain"),
-                    suggested_action=data.get("suggested_action", "follow_up_same_topic"),
+                    candidate_engagement=_pick_one(data.get("candidate_engagement", ""), self._VALID_ENGAGEMENT, "neutral"),
+                    knowledge_level=_pick_one(data.get("knowledge_level", ""), self._VALID_KNOWLEDGE, "uncertain"),
+                    suggested_action=_pick_one(data.get("suggested_action", ""), self._VALID_ACTION, "follow_up_same_topic"),
                     question_focus=data.get("question_focus", ""),
                     knowledge_gaps=tuple(data.get("knowledge_gaps", [])),
                     acknowledgment=data.get("acknowledgment", ""),

@@ -108,7 +108,6 @@ def run_async(coro, timeout: int = 120):
         raise TimeoutError(f"Async operation timed out after {timeout}s")
 
 
-
 def run_async_streaming(gen_coro, placeholder, timeout: int = 30) -> str:
     """
     Stream tokens from an async generator while updating Streamlit safely.
@@ -126,6 +125,8 @@ def run_async_streaming(gen_coro, placeholder, timeout: int = 30) -> str:
     Returns:
         The full concatenated response string.
     """
+    # This function is now deprecated in favor of `st.write_stream()`
+    # but left here for context if needed for other streaming components.
     loop = _get_background_loop()
     chunk_queue: "queue.Queue[object]" = queue.Queue()
     _SENTINEL = object()
@@ -214,14 +215,18 @@ def load_agent():
     from agent import NLPAgent
 
     agent = NLPAgent(
-        enable_scorer=True, # Enable CPU scorer for intelligent answer analysis
+        model_path="oussema2021/fintuned_v3_AiRecruter",
+        enable_scorer=True,  # Enable CPU scorer for intelligent answer analysis
         scorer_model="Qwen/Qwen2.5-1.5B-Instruct",
+        enable_refiner=True,  # Enable question refinement
+        refiner_model="Qwen/Qwen2.5-1.5B-Instruct",
         enable_tts=True,  # Enable TTS for voice output
         tts_voice="af_heart",
-        use_compact_prompt=True,
+        use_compact_prompt=False,
         auto_cleanup_gpu=False,  # Don't auto-cleanup to avoid killing ourselves
-        load_timeout_sec=180,
-    )   
+        load_timeout_sec=600, # Increased timeout for model loading
+        gpu_memory_utilization=0.7, # added this to allocate 70% of GPU memory for vLLM's KV cache
+    )
     return agent
 
 
@@ -252,7 +257,7 @@ def initialize_agent_with_progress():
                 st.progress(0.5, "Loading vLLM model (this takes ~60 seconds)...")
 
             try:
-                run_async(agent.warmup(), timeout=180)
+                run_async(agent.warmup(), timeout=600) # Increased timeout here as well
             except Exception as e:
                 st.error(f"Model warmup failed: {e}")
                 st.info("Try refreshing the page. If the problem persists, check GPU memory.")
@@ -366,7 +371,7 @@ def main():
 
         use_streaming = st.checkbox(
             "Fast streaming mode",
-            value=False,
+            value=True, # Changed default to True to demonstrate streaming
             help="Lower latency but less robust metadata/scoring. Disable for most stable vocal demo.",
         )
 
@@ -453,7 +458,7 @@ def main():
             response_obj = None
 
             try:
-                from agent import QuestionGenerationRequest
+                from agent import QuestionGenerationRequest, StreamingQuestionChunk
 
                 request = QuestionGenerationRequest(
                     candidate_cv=st.session_state.cv_text,
@@ -464,19 +469,61 @@ def main():
                 )
 
                 if use_streaming:
-                    # Fast streaming path — uses run_async_streaming so that
-                    # all Streamlit UI calls stay on the main thread (fixes the
-                    # "missing ScriptRunContext" timeout caused by calling
-                    # message_placeholder.markdown from the background loop).
-                    t_start = time.time()
+                    # v8 streaming path: tokens → sentence-boundary TTS pipeline.
+                    # generate_question_streaming_with_audio() yields
+                    # StreamingQuestionChunk objects:
+                    #   .text_delta  — new tokens to append to display
+                    #   .tts_result  — TTSResult when a sentence is ready
+                    #   .is_final    — True on last chunk
+                    #
+                    # We collect audio chunks here on the main thread and
+                    # concatenate them at the end for st.audio playback.
+                    # (Browser autoplay of sequential audio chunks isn't
+                    # reliable in Streamlit, so we still play the full
+                    # concatenated WAV once — but TTS synthesis starts
+                    # ~400ms earlier than before.)
 
-                    full_response = run_async_streaming(
-                        agent.generate_question_streaming(request),
-                        message_placeholder,
-                        timeout=30,
-                    )
-                    full_response = " ".join(full_response.split())
-                    message_placeholder.markdown(full_response)
+                    t_start = time.time()
+                    audio_chunks = []  # List[TTSResult]
+
+                    def get_async_text_generator():
+                        """Runs the async generator on the background loop and yields text deltas."""
+                        loop = _get_background_loop()
+                        queue_local: "queue.Queue[object]" = queue.Queue()
+                        _END = object()
+
+                        async def _collect():
+                            nonlocal full_response # Use nonlocal to modify full_response outside the async func
+                            try:
+                                async for chunk in agent.generate_question_streaming_with_audio(request):
+                                    queue_local.put(chunk)
+                                    if chunk.tts_result is not None:
+                                        audio_chunks.append(chunk.tts_result)
+                            finally:
+                                queue_local.put(_END)
+
+                        future = asyncio.run_coroutine_threadsafe(_collect(), loop)
+
+                        while True:
+                            try:
+                                item = queue_local.get(timeout=45)
+                            except queue.Empty:
+                                future.cancel()
+                                raise TimeoutError("Streaming timed out with no new tokens")
+
+                            if item is _END:
+                                break
+
+                            if item.text_delta:
+                                yield item.text_delta
+
+                        # Propagate any exception from the background coroutine
+                        try:
+                            future.result(timeout=5)
+                        except Exception as exc:
+                            raise RuntimeError(f"Streaming coroutine failed: {exc}") from exc
+
+                    full_response = st.write_stream(get_async_text_generator())
 
                     latency = time.time() - t_start
                     metrics = type("metrics", (object,), {
@@ -485,25 +532,24 @@ def main():
                         "num_tokens": len(full_response.split()),
                         "tokens_per_sec": len(full_response.split()) / latency if latency > 0 else 0,
                     })()
+
+                    # Wrap audio chunks in a StreamingTTSResult for .to_wav_bytes()
+                    from tts_engine import StreamingTTSResult
+                    streaming_audio = StreamingTTSResult(chunks=audio_chunks) if audio_chunks else None
+
                     response_obj = type("obj", (object,), {
                         "question": full_response,
-                        "reasoning": "streaming_fast_path",
+                        "reasoning": "streaming+tts_pipeline",
                         "topic_depth": 0,
                         "turn_count": 0,
                         "metrics": metrics,
                         "is_follow_up": False,
                         "scorer_output": None,
-                        "audio": None,
+                        "audio": streaming_audio,
                     })()
 
-                    # Ensure vocal output works in streaming mode too.
-                    if getattr(agent, "_tts", None) and agent._tts.is_ready and full_response:
-                        try:
-                            response_obj.audio = run_async(agent._tts.synthesize(full_response), timeout=10)
-                        except Exception as tts_err:
-                            print(f"[app] Streaming TTS error: {tts_err}")
                 else:
-                    # Stable production path: full generation + validation + scorer + TTS.
+                    # Stable production path: full generation + segmented TTS.
                     message_placeholder.markdown("🤔 Thinking...")
                     response_obj = run_async(agent.generate_question(request), timeout=45)
                     full_response = response_obj.question

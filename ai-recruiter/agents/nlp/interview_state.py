@@ -185,6 +185,11 @@ class InterviewStateTracker:
             self._transition_topic()
             return False, "candidate_requested_skip"
 
+        # Evasive candidate — move on faster (don't insist)
+        if analysis.engagement in ("evasive", "frustrated") and self.topic_depth >= 1:
+            self._transition_topic()
+            return False, f"evasive_moving_on (engagement={analysis.engagement})"
+
         # Nonsense
         if analysis.is_nonsense:
             self.consecutive_vague += 1
@@ -233,9 +238,34 @@ class InterviewStateTracker:
 
         parts = []
 
-        # Add acknowledgment from analyzer
+        # Add acknowledgment from analyzer, or provide a default one
         if analysis.acknowledgment:
-            parts.append(f"Start your response with: \"{analysis.acknowledgment}\"")
+            parts.append(f"React naturally to their answer, e.g.: \"{analysis.acknowledgment}\"")
+        elif reason != "opening_turn":
+            # Provide varied, natural acknowledgments based on answer quality
+            if analysis.quality == "detailed":
+                ack_options = [
+                    "React to something specific they mentioned.",
+                    "Briefly comment on their approach before asking.",
+                    "Show you listened — reference a detail from their answer.",
+                ]
+            elif analysis.quality in ("vague", "partial"):
+                ack_options = [
+                    "Briefly acknowledge, then dig deeper on the same topic.",
+                    "Show curiosity about what they said — ask them to elaborate.",
+                ]
+            elif analysis.wants_to_skip:
+                ack_options = [
+                    "No worries, smoothly transition to the next topic.",
+                    "That's fine — move on naturally.",
+                ]
+            else:
+                ack_options = [
+                    "React naturally to their answer.",
+                    "Briefly acknowledge what they said.",
+                ]
+            import random
+            parts.append(random.choice(ack_options))
 
         # Main instruction
         if analysis.is_asking_for_clarity:
@@ -248,9 +278,9 @@ class InterviewStateTracker:
         elif analysis.wants_to_skip:
             next_topic = self._get_next_topic()
             if next_topic:
-                parts.append(f"Say 'Sure.' and ask about: {next_topic}")
+                parts.append(f"Ask about: {next_topic}")
             else:
-                parts.append("Say 'Sure.' and ask about a different CV project")
+                parts.append("Ask about a different CV project")
 
         elif reason == "too_many_vague_moving_on":
             next_topic = self._get_next_topic()
@@ -282,12 +312,12 @@ class InterviewStateTracker:
         return "[" + " | ".join(parts) + "]"
 
     _FOLLOW_UP_HINTS: Tuple[str, ...] = (
-        "Ask what THEY personally did.",
-        "Ask about a specific CHALLENGE.",
-        "Ask for MEASURABLE RESULTS.",
-        "Ask to WALK THROUGH their approach.",
-        "Ask about TECHNOLOGY CHOICES and WHY.",
-        "Ask how they VALIDATED the solution.",
+        "Ask what THEY personally built or designed.",
+        "Ask about a specific challenge or tricky part.",
+        "Ask about concrete results or impact.",
+        "Ask them to walk through their approach step by step.",
+        "Ask why they chose that specific technology or method.",
+        "Ask how they tested or validated their solution.",
     )
 
     # ------------------------------------------------------------------
