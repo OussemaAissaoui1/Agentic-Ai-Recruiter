@@ -1,6 +1,5 @@
 """
 Streamlit Demo — AI Recruiter Interview Simulator
-
 Usage:
     cd agents/nlp
     streamlit run demo/app.py
@@ -13,13 +12,11 @@ Features:
     - Session management
     - Production-ready error handling
 """
-
 import sys
 import os
 
 # Add parent directory to path so imports work
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 import streamlit as st
 import asyncio
 import concurrent.futures
@@ -28,15 +25,12 @@ import queue
 import time
 import uuid
 from typing import Optional
-
 # Page config must be first Streamlit command
 st.set_page_config(
     page_title="AI Recruiter — Interview Simulator",
     page_icon="🎤",
     layout="wide",
 )
-
-
 # ---------------------------------------------------------------------------
 # Async helper — persistent background loop (fixes vLLM event-loop mismatch)
 # ---------------------------------------------------------------------------
@@ -54,7 +48,6 @@ st.set_page_config(
 #   for the entire process lifetime.  ALL async work — warmup, generate,
 #   TTS, scorer — is scheduled onto that loop via run_coroutine_threadsafe.
 #   vLLM is always called from the same loop it was initialised in.
-
 _BG_LOOP: Optional[asyncio.AbstractEventLoop] = None
 _BG_THREAD: Optional[threading.Thread] = None
 _BG_LOOP_LOCK = threading.Lock()
