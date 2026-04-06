@@ -32,7 +32,7 @@ logger = logging.getLogger("avatar.agent")
 # ---------------------------------------------------------------------------
 
 AVATAR_DIR = Path(__file__).parent
-DEFAULT_GLB = AVATAR_DIR / "male_head.glb"
+DEFAULT_GLB = AVATAR_DIR / "brunette.glb"
 
 
 @dataclass

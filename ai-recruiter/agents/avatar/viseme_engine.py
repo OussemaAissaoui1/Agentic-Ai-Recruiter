@@ -42,9 +42,9 @@ logger = logging.getLogger("avatar.viseme_engine")
 # ---------------------------------------------------------------------------
 
 VISEME_NAMES = [
-    "visemeSil", "visemePP", "visemeFF", "visemeTH", "visemeDD",
-    "visemeK", "visemeCH", "visemeSS", "visemeNN", "visemeRR",
-    "visemeAA", "visemeE", "visemeI", "visemeO", "visemeU", "visemeOH",
+    "viseme_sil", "viseme_PP", "viseme_FF", "viseme_TH", "viseme_DD",
+    "viseme_kk", "viseme_CH", "viseme_SS", "viseme_nn", "viseme_RR",
+    "viseme_aa", "viseme_E", "viseme_I", "viseme_O", "viseme_U",
 ]
 
 
@@ -196,7 +196,7 @@ class VisemeEngine:
         # RMS energy
         rms = float(np.sqrt(np.mean(frame ** 2)))
         if rms < self._energy_threshold:
-            weights["visemeSil"] = 1.0
+            weights["viseme_sil"] = 1.0
             return weights
 
         # Normalize energy to [0, 1] range (log scale)
@@ -233,35 +233,34 @@ class VisemeEngine:
         else:
             centroid = 0.0
 
-        # --- Viseme mapping ---
+        # --- Viseme mapping (Wolf3D / RPM underscore names) ---
 
         # Silence/neutral (inverse of energy)
-        weights["visemeSil"] = max(0.0, 1.0 - energy * 3)
+        weights["viseme_sil"] = max(0.0, 1.0 - energy * 3)
 
         # Open vowels — high F1, moderate energy
-        weights["visemeAA"] = min(1.0, f1_energy * 1.8 * energy)
+        weights["viseme_aa"] = min(1.0, f1_energy * 1.8 * energy)
 
         # Front vowels — high F2
-        weights["visemeE"] = min(1.0, f2_energy * 1.2 * energy * (1 - f1_energy * 0.5))
-        weights["visemeI"] = min(1.0, f2_energy * 1.5 * (1 - f1_energy) * energy)
-        
+        weights["viseme_E"] = min(1.0, f2_energy * 1.2 * energy * (1 - f1_energy * 0.5))
+        weights["viseme_I"] = min(1.0, f2_energy * 1.5 * (1 - f1_energy) * energy)
+
         # Back vowels — low F2, moderate F1
-        weights["visemeO"] = min(1.0, f1_energy * (1 - f2_energy * 0.8) * energy * 1.3)
-        weights["visemeU"] = min(1.0, (1 - f2_energy) * (1 - f1_energy * 0.5) * energy * 0.8)
-        weights["visemeOH"] = min(1.0, f1_energy * 0.8 * (1 - f2_energy * 0.5) * energy)
+        weights["viseme_O"] = min(1.0, f1_energy * (1 - f2_energy * 0.8) * energy * 1.3)
+        weights["viseme_U"] = min(1.0, (1 - f2_energy) * (1 - f1_energy * 0.5) * energy * 0.8)
 
         # Fricatives — high frequency content
-        weights["visemeSS"] = min(1.0, sib_energy * 2.0 * energy)
-        weights["visemeFF"] = min(1.0, fric_energy * 1.5 * (1 - sib_energy) * energy)
-        weights["visemeTH"] = min(1.0, fric_energy * 0.8 * energy)
+        weights["viseme_SS"] = min(1.0, sib_energy * 2.0 * energy)
+        weights["viseme_FF"] = min(1.0, fric_energy * 1.5 * (1 - sib_energy) * energy)
+        weights["viseme_TH"] = min(1.0, fric_energy * 0.8 * energy)
 
         # Plosives/nasals — detected by energy transients (approximated)
-        weights["visemePP"] = min(1.0, energy * 0.6 * (1 - voice_energy) * (1 - fric_energy))
-        weights["visemeDD"] = min(1.0, energy * 0.5 * voice_energy * (1 - f1_energy * 0.5))
-        weights["visemeK"] = min(1.0, energy * 0.4 * (1 - voice_energy * 0.5) * fric_energy * 0.5)
-        weights["visemeCH"] = min(1.0, fric_energy * sib_energy * energy * 1.2)
-        weights["visemeNN"] = min(1.0, voice_energy * 0.5 * (1 - fric_energy) * energy * 0.6)
-        weights["visemeRR"] = min(1.0, f1_energy * f2_energy * energy * 0.8)
+        weights["viseme_PP"] = min(1.0, energy * 0.6 * (1 - voice_energy) * (1 - fric_energy))
+        weights["viseme_DD"] = min(1.0, energy * 0.5 * voice_energy * (1 - f1_energy * 0.5))
+        weights["viseme_kk"] = min(1.0, energy * 0.4 * (1 - voice_energy * 0.5) * fric_energy * 0.5)
+        weights["viseme_CH"] = min(1.0, fric_energy * sib_energy * energy * 1.2)
+        weights["viseme_nn"] = min(1.0, voice_energy * 0.5 * (1 - fric_energy) * energy * 0.6)
+        weights["viseme_RR"] = min(1.0, f1_energy * f2_energy * energy * 0.8)
 
         # Normalize: ensure weights sum to reasonable range
         total = sum(weights.values())
