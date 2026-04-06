@@ -128,7 +128,7 @@ fi
 echo "  Python packages: OK"
 
 # GLB avatar file
-GLB_FILE="$AVATAR_DIR/ready_player_me_female_avatar__vrchatgame.glb"
+GLB_FILE="$AVATAR_DIR/brunette.glb"
 if [ ! -f "$GLB_FILE" ]; then
     echo "  ERROR: GLB avatar file not found: $GLB_FILE"
     echo "  Place your Ready Player Me .glb file at the path above"

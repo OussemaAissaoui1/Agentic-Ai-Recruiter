@@ -488,8 +488,15 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
     }
   }, []);
 
-  // Opening greeting
+  // Opening greeting — guarded against React StrictMode double-mount
+  const greetingFired = useRef(false);
   useEffect(() => {
+    if (greetingFired.current) return;
+    greetingFired.current = true;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const fetchGreeting = async () => {
       setIsThinking(true);
       setIsStreaming(true);
@@ -510,6 +517,10 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
     };
 
     fetchGreeting();
+
+    return () => {
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -593,53 +604,21 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
 
   return (
     <div style={{
-      minHeight: "100vh", background: "#0f0f1a",
-      display: "flex", flexDirection: "column",
+      height: "100vh", background: "#0f0f1a",
+      display: "flex", flexDirection: "row", overflow: "hidden",
     }}>
-      {/* ── Top bar ── */}
+      {/* ═══════════════════════════════════════════════════ */}
+      {/* LEFT — Avatar panel (60%)                          */}
+      {/* ═══════════════════════════════════════════════════ */}
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "14px 24px",
-        borderBottom: "1px solid rgba(255,255,255,0.07)",
-        background: "rgba(15,15,26,0.9)", backdropFilter: "blur(12px)",
-        position: "sticky", top: 0, zIndex: 10,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: "50%",
-            background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
-          }}>
-            👤
-          </div>
-          <div>
-            <div style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 600 }}>
-              Alex · AI Recruiter
-            </div>
-            <div style={{ color: "#64748b", fontSize: 12 }}>{role}</div>
-          </div>
-        </div>
-        <button
-          onClick={handleReset}
-          style={{
-            padding: "6px 14px", borderRadius: 7,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "#94a3b8", fontSize: 13, cursor: "pointer",
-          }}
-        >
-          New Interview
-        </button>
-      </div>
-
-      {/* ── Avatar area ── */}
-      <div style={{
-        display: "flex", flexDirection: "column", alignItems: "center",
-        paddingTop: 24, paddingBottom: 12,
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        width: "60%", height: "100vh", flexShrink: 0, position: "relative",
+        background: "radial-gradient(ellipse at 50% 35%, #1a1a38 0%, #0f0f1a 70%)",
+        borderRight: "1px solid rgba(255,255,255,0.06)",
       }}>
         {avatarError ? (
-          <ErrorFallback error={avatarError} resetFn={() => setAvatarError(null)} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+            <ErrorFallback error={avatarError} resetFn={() => setAvatarError(null)} />
+          </div>
         ) : (
           <AvatarCanvasWrapper
             lipSyncRef={lipSyncRef}
@@ -648,91 +627,151 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
             onError={setAvatarError}
           />
         )}
+
+        {/* Status badge overlay */}
         <div style={{
-          marginTop: 10, fontSize: 13,
-          color: isThinking || isSpeaking || isStreaming ? "#818cf8" : "#475569",
-          letterSpacing: 0.5, transition: "color 0.3s",
+          position: "absolute", bottom: 28, left: "50%", transform: "translateX(-50%)",
+          padding: "6px 18px", borderRadius: 20,
+          background: "rgba(0,0,0,0.55)", backdropFilter: "blur(10px)",
+          fontSize: 13, letterSpacing: 0.5, pointerEvents: "none",
+          color: isSpeaking ? "#818cf8" : isThinking ? "#a78bfa" : "#475569",
+          transition: "color 0.3s",
+          border: "1px solid rgba(255,255,255,0.08)",
         }}>
-          {orbLabel}
+          {isSpeaking ? "● Speaking" : isThinking ? "● Thinking…" : isStreaming ? "● Generating…" : "● Listening"}
+        </div>
+
+        {/* Candidate name badge */}
+        <div style={{
+          position: "absolute", top: 20, left: 20,
+          padding: "5px 14px", borderRadius: 20,
+          background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)",
+          fontSize: 12, color: "#94a3b8", pointerEvents: "none",
+          border: "1px solid rgba(255,255,255,0.07)", letterSpacing: 0.3,
+        }}>
+          {candidateName}
         </div>
       </div>
 
-      {/* ── Messages ── */}
+      {/* ═══════════════════════════════════════════════════ */}
+      {/* RIGHT — Chat panel (40%)                           */}
+      {/* ═══════════════════════════════════════════════════ */}
       <div style={{
-        flex: 1, overflowY: "auto", padding: "20px 24px",
-        maxWidth: 720, width: "100%", margin: "0 auto", boxSizing: "border-box",
+        width: "40%", height: "100vh",
+        display: "flex", flexDirection: "column",
+        background: "#0f0f1a",
       }}>
-        {messages.map((msg, i) => (
-          <Message key={i} role={msg.role} text={msg.text} isStreaming={false} />
-        ))}
-        {streamingText && (
-          <Message role="recruiter" text={streamingText} isStreaming={true} />
-        )}
-        {isThinking && !streamingText && (
-          <div style={{ display: "flex", gap: 6, padding: "8px 0", paddingLeft: 4 }}>
-            {[0, 1, 2].map((i) => (
-              <div key={i} style={{
-                width: 8, height: 8, borderRadius: "50%", background: "#6366f1",
-                animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
-              }} />
-            ))}
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* ── Input ── */}
-      <div style={{
-        padding: "16px 24px",
-        borderTop: "1px solid rgba(255,255,255,0.07)",
-        background: "rgba(15,15,26,0.95)", backdropFilter: "blur(12px)",
-      }}>
+        {/* ── Top bar ── */}
         <div style={{
-          maxWidth: 720, margin: "0 auto",
-          display: "flex", gap: 10, alignItems: "flex-end",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 20px",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          background: "rgba(15,15,26,0.95)", backdropFilter: "blur(12px)",
+          flexShrink: 0,
         }}>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={handleInputFocus}
-            placeholder={isStreaming ? "Wait for Alex to finish…" : "Type your answer…"}
-            disabled={isStreaming}
-            rows={1}
-            style={{
-              flex: 1,
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 12, color: "#e2e8f0",
-              padding: "12px 16px", fontSize: 14, outline: "none",
-              resize: "none", lineHeight: 1.5, maxHeight: 120, overflow: "auto",
-              opacity: isStreaming ? 0.5 : 1, transition: "opacity 0.2s",
-            }}
-            onInput={(e) => {
-              e.target.style.height = "auto";
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
-            }}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: "50%",
+              background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+            }}>
+              👤
+            </div>
+            <div>
+              <div style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 600 }}>
+                Alex · AI Recruiter
+              </div>
+              <div style={{ color: "#64748b", fontSize: 12 }}>{role}</div>
+            </div>
+          </div>
           <button
-            onClick={handleSubmit}
-            disabled={isStreaming || !input.trim()}
+            onClick={handleReset}
             style={{
-              width: 44, height: 44, borderRadius: "50%",
-              background: isStreaming || !input.trim()
-                ? "rgba(99,102,241,0.2)"
-                : "linear-gradient(135deg, #6366f1, #4f46e5)",
-              border: "none", color: "#fff", fontSize: 18,
-              cursor: isStreaming || !input.trim() ? "not-allowed" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0, transition: "background 0.2s",
+              padding: "6px 14px", borderRadius: 7,
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "#94a3b8", fontSize: 13, cursor: "pointer",
             }}
           >
-            ↑
+            New Interview
           </button>
         </div>
-        <div style={{ textAlign: "center", marginTop: 8, color: "#334155", fontSize: 12 }}>
-          Enter to send · Shift+Enter for new line
+
+        {/* ── Messages ── */}
+        <div style={{
+          flex: 1, overflowY: "auto", padding: "20px 18px",
+          boxSizing: "border-box",
+        }}>
+          {messages.map((msg, i) => (
+            <Message key={i} role={msg.role} text={msg.text} isStreaming={false} />
+          ))}
+          {streamingText && (
+            <Message role="recruiter" text={streamingText} isStreaming={true} />
+          )}
+          {isThinking && !streamingText && (
+            <div style={{ display: "flex", gap: 6, padding: "8px 0", paddingLeft: 4 }}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} style={{
+                  width: 8, height: 8, borderRadius: "50%", background: "#6366f1",
+                  animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                }} />
+              ))}
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* ── Input ── */}
+        <div style={{
+          padding: "14px 18px",
+          borderTop: "1px solid rgba(255,255,255,0.07)",
+          background: "rgba(15,15,26,0.95)", backdropFilter: "blur(12px)",
+          flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={handleInputFocus}
+              placeholder={isStreaming ? "Wait for Alex to finish…" : "Type your answer…"}
+              disabled={isStreaming}
+              rows={1}
+              style={{
+                flex: 1,
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 12, color: "#e2e8f0",
+                padding: "12px 14px", fontSize: 14, outline: "none",
+                resize: "none", lineHeight: 1.5, maxHeight: 120, overflow: "auto",
+                opacity: isStreaming ? 0.5 : 1, transition: "opacity 0.2s",
+              }}
+              onInput={(e) => {
+                e.target.style.height = "auto";
+                e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+              }}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={isStreaming || !input.trim()}
+              style={{
+                width: 44, height: 44, borderRadius: "50%",
+                background: isStreaming || !input.trim()
+                  ? "rgba(99,102,241,0.2)"
+                  : "linear-gradient(135deg, #6366f1, #4f46e5)",
+                border: "none", color: "#fff", fontSize: 18,
+                cursor: isStreaming || !input.trim() ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, transition: "background 0.2s",
+              }}
+            >
+              ↑
+            </button>
+          </div>
+          <div style={{ textAlign: "center", marginTop: 6, color: "#334155", fontSize: 11 }}>
+            Enter to send · Shift+Enter for new line
+          </div>
         </div>
       </div>
 

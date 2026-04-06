@@ -143,7 +143,7 @@ async def startup():
     try:
         from avatar.agent import AvatarAgent, AvatarConfig
         _avatar_agent = AvatarAgent(config=AvatarConfig(
-            glb_path=str(AVATAR_DIR / "ready_player_me_female_avatar__vrchatgame.glb"),
+            glb_path=str(AVATAR_DIR / "brunette.glb"),
         ))
         await _avatar_agent.initialize()
         logger.info("[2/2] Avatar agent ready")

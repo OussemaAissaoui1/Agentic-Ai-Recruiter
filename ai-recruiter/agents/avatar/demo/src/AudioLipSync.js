@@ -15,10 +15,11 @@
  *   visemeAA, visemeE, visemeI, visemeO, visemeU, visemeOH
  */
 
+// Ready Player Me (Wolf3D) morph-target names
 const VISEME_NAMES = [
-  "visemeSil", "visemePP", "visemeFF", "visemeTH", "visemeDD",
-  "visemeK", "visemeCH", "visemeSS", "visemeNN", "visemeRR",
-  "visemeAA", "visemeE", "visemeI", "visemeO", "visemeU", "visemeOH",
+  "viseme_sil", "viseme_PP", "viseme_FF", "viseme_TH", "viseme_DD",
+  "viseme_kk",  "viseme_CH", "viseme_SS", "viseme_nn", "viseme_RR",
+  "viseme_aa",  "viseme_E",  "viseme_I",  "viseme_O",  "viseme_U",
 ];
 
 /**
@@ -204,35 +205,34 @@ export class LipSyncAudioQueue {
       (voice * 0.3 + f1 * 0.3 + f2 * 0.2 + fric * 0.1 + sib * 0.1);
 
     if (overall < 0.03) {
-      weights.visemeSil = 1.0;
+      weights["viseme_sil"] = 1.0;
       return weights;
     }
 
     const energy = Math.min(1.0, overall * 3);
 
-    // Vowels
-    weights.visemeAA = Math.min(1.0, f1 * 2.0 * energy);
-    weights.visemeE = Math.min(1.0, f2 * 1.4 * energy * (1 - f1 * 0.4));
-    weights.visemeI = Math.min(1.0, f2 * 1.6 * (1 - f1) * energy);
-    weights.visemeO = Math.min(1.0, f1 * (1 - f2 * 0.7) * energy * 1.5);
-    weights.visemeU = Math.min(1.0, (1 - f2) * (1 - f1 * 0.4) * energy * 0.9);
-    weights.visemeOH = Math.min(1.0, f1 * 0.9 * (1 - f2 * 0.4) * energy);
+    // Vowels (RPM names)
+    weights["viseme_aa"] = Math.min(1.0, f1 * 2.0 * energy);
+    weights["viseme_E"]  = Math.min(1.0, f2 * 1.4 * energy * (1 - f1 * 0.4));
+    weights["viseme_I"]  = Math.min(1.0, f2 * 1.6 * (1 - f1) * energy);
+    weights["viseme_O"]  = Math.min(1.0, f1 * (1 - f2 * 0.7) * energy * 1.5);
+    weights["viseme_U"]  = Math.min(1.0, (1 - f2) * (1 - f1 * 0.4) * energy * 0.9);
 
     // Fricatives
-    weights.visemeSS = Math.min(1.0, sib * 2.5 * energy);
-    weights.visemeFF = Math.min(1.0, fric * 1.8 * (1 - sib) * energy);
-    weights.visemeTH = Math.min(1.0, fric * 0.9 * energy);
+    weights["viseme_SS"] = Math.min(1.0, sib * 2.5 * energy);
+    weights["viseme_FF"] = Math.min(1.0, fric * 1.8 * (1 - sib) * energy);
+    weights["viseme_TH"] = Math.min(1.0, fric * 0.9 * energy);
 
     // Stops/nasals
-    weights.visemePP = Math.min(1.0, energy * 0.7 * (1 - voice) * (1 - fric));
-    weights.visemeDD = Math.min(1.0, energy * 0.6 * voice * (1 - f1 * 0.4));
-    weights.visemeK = Math.min(1.0, energy * 0.5 * (1 - voice * 0.5) * fric * 0.6);
-    weights.visemeCH = Math.min(1.0, fric * sib * energy * 1.5);
-    weights.visemeNN = Math.min(1.0, voice * 0.6 * (1 - fric) * energy * 0.7);
-    weights.visemeRR = Math.min(1.0, f1 * f2 * energy * 0.9);
+    weights["viseme_PP"] = Math.min(1.0, energy * 0.7 * (1 - voice) * (1 - fric));
+    weights["viseme_DD"] = Math.min(1.0, energy * 0.6 * voice * (1 - f1 * 0.4));
+    weights["viseme_kk"] = Math.min(1.0, energy * 0.5 * (1 - voice * 0.5) * fric * 0.6);
+    weights["viseme_CH"] = Math.min(1.0, fric * sib * energy * 1.5);
+    weights["viseme_nn"] = Math.min(1.0, voice * 0.6 * (1 - fric) * energy * 0.7);
+    weights["viseme_RR"] = Math.min(1.0, f1 * f2 * energy * 0.9);
 
     // Silence (inverse)
-    weights.visemeSil = Math.max(0, 1.0 - energy * 3);
+    weights["viseme_sil"] = Math.max(0, 1.0 - energy * 3);
 
     return weights;
   }

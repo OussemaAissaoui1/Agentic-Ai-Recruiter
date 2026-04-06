@@ -1,0 +1,353 @@
+/**
+ * BrunetteAvatarCanvas — Ready Player Me avatar with real-time lip sync.
+ *
+ * Drop-in replacement for AvatarCanvas.jsx, wired to the brunette.glb
+ * RPM mesh structure. Four meshes carry morph targets:
+ *   EyeLeft, EyeRight, Wolf3D_Head, Wolf3D_Teeth
+ *
+ * RPM viseme names (what the GLB actually uses):
+ *   viseme_sil, viseme_PP, viseme_FF, viseme_TH, viseme_DD,
+ *   viseme_kk, viseme_CH, viseme_SS, viseme_nn, viseme_RR,
+ *   viseme_aa, viseme_E, viseme_I, viseme_O, viseme_U
+ *
+ * Mapping from LipSyncAudioQueue weight keys → RPM morph target names:
+ *   The queue emits keys like { visemeAA, visemeO, visemeE, visemeU,
+ *   visemeI, visemeOH, visemePP, visemeFF, visemeTH, visemeSS,
+ *   visemeCH, visemeDD, visemeKK, visemeNN, visemeRR, visemeSIL }
+ *   This file translates them before writing to morphTargetInfluences.
+ *
+ * Props:
+ *   lipSyncRef  — ref to LipSyncAudioQueue instance
+ *   isSpeaking  — whether audio is currently playing
+ *   isThinking  — whether the agent is generating
+ */
+
+import { Suspense, useEffect, useRef, useMemo } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useGLTF, Environment } from "@react-three/drei";
+import { SkeletonUtils } from "three-stdlib";
+import * as THREE from "three";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const AVATAR_URL = "/brunette.glb";
+
+const IDLE_BLINK_INTERVAL_MS = 3500;
+const IDLE_BLINK_DURATION_MS = 150;
+
+// Maps LipSyncAudioQueue output keys → RPM morph target names.
+// One queue key can drive multiple RPM targets (e.g. visemeAA → viseme_aa).
+// Weights are multiplied by the scale factor before being applied.
+const VISEME_MAP = [
+  // queue key        RPM target      scale
+  ["visemeSIL",  "viseme_sil",   1.0],
+  ["visemePP",   "viseme_PP",    1.0],
+  ["visemeFF",   "viseme_FF",    1.0],
+  ["visemeTH",   "viseme_TH",    1.0],
+  ["visemeDD",   "viseme_DD",    1.0],
+  ["visemeKK",   "viseme_kk",    1.0],
+  ["visemeCH",   "viseme_CH",    1.0],
+  ["visemeSS",   "viseme_SS",    1.0],
+  ["visemeNN",   "viseme_nn",    1.0],
+  ["visemeRR",   "viseme_RR",    1.0],
+  ["visemeAA",   "viseme_aa",    1.0],
+  ["visemeE",    "viseme_E",     1.0],
+  ["visemeI",    "viseme_I",     1.0],
+  ["visemeO",    "viseme_O",     1.0],
+  ["visemeOH",   "viseme_O",     0.9],  // treat OH as a softer O
+  ["visemeU",    "viseme_U",     1.0],
+];
+
+// RPM blink morph target names (present on EyeLeft & EyeRight)
+const BLINK_TARGETS = ["eyeBlinkLeft", "eyeBlinkRight"];
+
+// Names of meshes in the RPM GLB that carry morph targets we care about
+const MORPH_MESH_NAMES = ["EyeLeft", "EyeRight", "Wolf3D_Head", "Wolf3D_Teeth"];
+
+// Lerp speed — higher = snappier mouth movement
+const LIP_LERP = 0.35;
+const LIP_DECAY = 0.88;   // decay multiplier per frame when not speaking
+
+// ---------------------------------------------------------------------------
+// Inner Three.js component
+// ---------------------------------------------------------------------------
+
+function BrunetteModel({ lipSyncRef, isSpeaking, isThinking }) {
+  const { scene } = useGLTF(AVATAR_URL);
+
+  // Clone so multiple instances don't share skeleton state
+  const clone = useMemo(() => SkeletonUtils.clone(scene), [scene]);
+
+  const { camera } = useThree();
+
+  // Refs to the four target meshes, keyed by mesh name
+  const morphMeshes = useRef({});
+  const cameraReady = useRef(false);
+  const blinkTimer = useRef(0);
+  const lastBlink = useRef(0);
+  const idleTime = useRef(0);
+  const headBone = useRef(null);
+
+  useEffect(() => {
+    const found = {};
+
+    clone.traverse((child) => {
+      // Collect morph-target meshes by name
+      if (MORPH_MESH_NAMES.includes(child.name) && child.morphTargetDictionary) {
+        found[child.name] = child;
+      }
+
+      // Grab the head bone for subtle idle movement
+      if (
+        child.isBone &&
+        !headBone.current &&
+        ["Head", "head", "Head_01", "mixamorigHead"].some(
+          (n) => child.name === n || child.name.startsWith(n)
+        )
+      ) {
+        headBone.current = child;
+      }
+    });
+
+    morphMeshes.current = found;
+
+    const meshCount = Object.keys(found).length;
+    console.log(
+      `[BrunetteAvatar] Found ${meshCount}/${MORPH_MESH_NAMES.length} morph meshes:`,
+      Object.keys(found)
+    );
+    if (meshCount < MORPH_MESH_NAMES.length) {
+      const missing = MORPH_MESH_NAMES.filter((n) => !found[n]);
+      console.warn("[BrunetteAvatar] Missing meshes:", missing);
+    }
+
+    // Log available viseme targets (once, for debugging)
+    const head = found["Wolf3D_Head"];
+    if (head?.morphTargetDictionary) {
+      const visemeKeys = Object.keys(head.morphTargetDictionary).filter((k) =>
+        k.startsWith("viseme")
+      );
+      console.log("[BrunetteAvatar] Viseme targets on Wolf3D_Head:", visemeKeys);
+    }
+
+    // ── Auto-fit camera to the head ──
+    if (!cameraReady.current) {
+      cameraReady.current = true;
+
+      const box = new THREE.Box3().setFromObject(clone);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+
+      // Focus on the upper 15 % of the model (the face area)
+      const headY = box.max.y - size.y * 0.10;
+
+      const fov = 30;
+      const halfFovRad = THREE.MathUtils.degToRad(fov / 2);
+      const frameWidth = Math.max(size.x * 0.4, 0.2);
+      const dist = (frameWidth / Math.tan(halfFovRad)) * 1.0;
+
+      camera.position.set(center.x, headY, center.z + Math.max(dist, 0.55));
+      camera.lookAt(center.x, headY, center.z);
+      camera.fov = fov;
+      camera.near = 0.01;
+      camera.far = 50;
+      camera.updateProjectionMatrix();
+
+      console.log(
+        `[BrunetteAvatar] Camera: pos=(${camera.position.x.toFixed(2)}, ` +
+          `${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}) ` +
+          `fov=${fov}`
+      );
+    }
+  }, [clone, camera]);
+
+  // ── Per-frame update ──
+  useFrame((state, delta) => {
+    const lipSync = lipSyncRef?.current;
+    const now = state.clock.elapsedTime * 1000;
+    idleTime.current += delta;
+
+    const meshes = morphMeshes.current;
+
+    // ── Lip sync via RPM viseme morph targets ──
+    if (isSpeaking && lipSync) {
+      // getVisemeWeights returns an object with keys like { visemeAA: 0.8, ... }
+      const weights = lipSync.getVisemeWeights(LIP_LERP);
+
+      for (const [queueKey, rpmTarget, scale] of VISEME_MAP) {
+        const rawWeight = (weights[queueKey] ?? 0) * scale;
+        if (rawWeight === 0) continue;
+
+        // Apply to every mesh that has this morph target
+        for (const meshName of MORPH_MESH_NAMES) {
+          const mesh = meshes[meshName];
+          if (!mesh?.morphTargetDictionary) continue;
+
+          const idx = mesh.morphTargetDictionary[rpmTarget];
+          if (idx === undefined) continue;
+
+          mesh.morphTargetInfluences[idx] = THREE.MathUtils.lerp(
+            mesh.morphTargetInfluences[idx],
+            rawWeight,
+            LIP_LERP
+          );
+        }
+      }
+    } else {
+      // Decay all viseme targets back to zero when silent
+      for (const meshName of MORPH_MESH_NAMES) {
+        const mesh = meshes[meshName];
+        if (!mesh?.morphTargetDictionary) continue;
+
+        for (const [, rpmTarget] of VISEME_MAP) {
+          const idx = mesh.morphTargetDictionary[rpmTarget];
+          if (idx === undefined) continue;
+
+          if (mesh.morphTargetInfluences[idx] > 0.005) {
+            mesh.morphTargetInfluences[idx] *= LIP_DECAY;
+          } else {
+            mesh.morphTargetInfluences[idx] = 0;
+          }
+        }
+      }
+    }
+
+    // ── Idle blink ──
+    if (now - lastBlink.current > IDLE_BLINK_INTERVAL_MS + Math.random() * 1200) {
+      lastBlink.current = now;
+      blinkTimer.current = IDLE_BLINK_DURATION_MS;
+    }
+
+    if (blinkTimer.current > 0) {
+      blinkTimer.current -= delta * 1000;
+      const progress = 1.0 - blinkTimer.current / IDLE_BLINK_DURATION_MS;
+      const blinkWeight = Math.sin(progress * Math.PI); // 0 → 1 → 0
+
+      for (const blinkTarget of BLINK_TARGETS) {
+        // eyeBlinkLeft lives on EyeLeft, eyeBlinkRight on EyeRight
+        const meshName = blinkTarget === "eyeBlinkLeft" ? "EyeLeft" : "EyeRight";
+        const mesh = meshes[meshName];
+        if (!mesh?.morphTargetDictionary) continue;
+
+        const idx = mesh.morphTargetDictionary[blinkTarget];
+        if (idx !== undefined) {
+          mesh.morphTargetInfluences[idx] = blinkWeight * 0.92;
+        }
+      }
+    }
+
+    // ── Subtle idle head movement ──
+    if (headBone.current) {
+      const t = idleTime.current;
+      const intensity = isThinking ? 0.018 : 0.006;
+
+      if (!isSpeaking) {
+        headBone.current.rotation.x +=
+          Math.sin(t * 0.45) * intensity * delta;
+        headBone.current.rotation.y =
+          Math.sin(t * 0.28) * intensity * 0.6;
+        headBone.current.rotation.z =
+          Math.cos(t * 0.38) * intensity * 0.35;
+      }
+    }
+  });
+
+  return <primitive object={clone} />;
+}
+
+// ---------------------------------------------------------------------------
+// Loading placeholder
+// ---------------------------------------------------------------------------
+
+function AvatarLoading() {
+  const meshRef = useRef();
+  useFrame((state) => {
+    if (meshRef.current)
+      meshRef.current.rotation.y = state.clock.elapsedTime * 0.5;
+  });
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[0.5, 16, 16]} />
+      <meshStandardMaterial
+        color="#6366f1"
+        wireframe
+        transparent
+        opacity={0.6}
+      />
+    </mesh>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Exported canvas wrapper  (same props as the original AvatarCanvas)
+// ---------------------------------------------------------------------------
+
+export default function BrunetteAvatarCanvas({ lipSyncRef, isSpeaking, isThinking }) {
+  return (
+    <div
+      style={{
+        width: 280,
+        height: 280,
+        borderRadius: "50%",
+        overflow: "hidden",
+        background:
+          "radial-gradient(ellipse at center, #1a1a2e 0%, #0f0f1a 70%)",
+        border: `2px solid ${
+          isSpeaking
+            ? "rgba(99,102,241,0.6)"
+            : isThinking
+            ? "rgba(99,102,241,0.3)"
+            : "rgba(255,255,255,0.08)"
+        }`,
+        boxShadow: isSpeaking
+          ? "0 0 30px rgba(99,102,241,0.3)"
+          : isThinking
+          ? "0 0 15px rgba(99,102,241,0.15)"
+          : "none",
+        transition: "border-color 0.5s, box-shadow 0.5s",
+        margin: "0 auto",
+      }}
+    >
+      <Canvas
+        gl={{
+          antialias: true,
+          alpha: true,
+          powerPreference: "high-performance",
+        }}
+        dpr={[1, 2]}
+        style={{ background: "transparent" }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = THREE.ACESFilmicToneMapping;
+          gl.toneMappingExposure = 1.5;
+          gl.outputColorSpace = THREE.SRGBColorSpace;
+        }}
+      >
+        {/* Lighting tuned for RPM skin tones */}
+        <ambientLight intensity={1.0} />
+        <directionalLight position={[1.5, 3, 4]} intensity={1.4} />
+        <directionalLight
+          position={[-2, 1, 2]}
+          intensity={0.7}
+          color="#d0d4ff"
+        />
+        <pointLight position={[0, 1.5, 3]} intensity={0.5} color="#ffffff" />
+
+        <Suspense fallback={<AvatarLoading />}>
+          <BrunetteModel
+            lipSyncRef={lipSyncRef}
+            isSpeaking={isSpeaking}
+            isThinking={isThinking}
+          />
+          <Environment preset="studio" />
+        </Suspense>
+      </Canvas>
+    </div>
+  );
+}
+
+// Preload so the GLB is ready before the interview screen mounts
+useGLTF.preload(AVATAR_URL);
