@@ -167,7 +167,7 @@ function AvatarModel({ lipSyncRef, isSpeaking, isThinking }) {
             if (key.startsWith("viseme")) {
               const idx = dict[key];
               if (idx !== undefined && influences[idx] > 0.01) {
-                influences[idx] *= 0.88;
+                influences[idx] *= 0.93;
                 if (influences[idx] < 0.01) influences[idx] = 0;
               }
             }

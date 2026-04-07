@@ -371,27 +371,26 @@ function AvatarModel({ lipSyncRef, isSpeaking, isThinking, controlsRef }) {
           if (!dict || !infl) continue;
           for (const [name, weight] of Object.entries(weights)) {
             const idx = dict[name];
-            if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], weight * 0.35, 0.08);
+            if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], weight * 0.28, 0.12);
           }
           const jawIdx = dict["jawOpen"];
           if (jawIdx !== undefined) {
-            const jaw = (weights["viseme_aa"]||0)*0.05 + (weights["viseme_O"]||0)*0.04 + (weights["viseme_E"]||0)*0.02 + (weights["viseme_U"]||0)*0.03;
-            infl[jawIdx] = THREE.MathUtils.lerp(infl[jawIdx], Math.min(jaw, 0.07), 0.05);
+            const jaw = (weights["viseme_aa"]||0)*0.18 + (weights["viseme_O"]||0)*0.14 + (weights["viseme_E"]||0)*0.07 + (weights["viseme_U"]||0)*0.10;
+                  infl[jawIdx] = THREE.MathUtils.lerp(infl[jawIdx], Math.min(jaw, 0.22), 0.08);
           }
         }
       } else {
         for (const mesh of meshes) {
           const dict = mesh.morphTargetDictionary; const infl = mesh.morphTargetInfluences;
-          if (!dict || !infl) continue;
+          if (!dict || !infl) continue; 
           for (const key of Object.keys(dict)) {
             if (key.startsWith("viseme_") || key === "jawOpen" || key === "mouthOpen") {
               const idx = dict[key];
-              if (idx !== undefined && infl[idx] > 0.003) { infl[idx] *= 0.88; if (infl[idx] < 0.003) infl[idx] = 0; }
+              if (idx !== undefined && infl[idx] > 0.002) { infl[idx] *= 0.78; if (infl[idx] < 0.002) infl[idx] = 0; }
             }
           }
         }
       }
-
       if (now - lastBlinkRef.current > IDLE_BLINK_INTERVAL + Math.random() * 1500) {
         lastBlinkRef.current = now; blinkTimerRef.current = IDLE_BLINK_DURATION;
       }

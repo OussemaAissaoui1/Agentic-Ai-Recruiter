@@ -76,7 +76,7 @@ class VisemeEngine:
     def __init__(
         self,
         frame_duration_ms: int = 20,
-        smoothing_factor: float = 0.6,
+        smoothing_factor: float = 0.35,
         energy_threshold: float = 0.01,
     ):
         self._frame_duration_ms = frame_duration_ms
@@ -136,8 +136,7 @@ class VisemeEngine:
             for name in VISEME_NAMES:
                 raw = raw_weights.get(name, 0.0)
                 prev = prev_weights.get(name, 0.0)
-                smoothed[name] = prev * self._smoothing + raw * (1 - self._smoothing)
-
+                smoothed[name] = prev * (1 - self._smoothing) + raw * self._smoothing
             prev_weights = smoothed
 
             frames.append(VisemeFrame(
@@ -264,9 +263,9 @@ class VisemeEngine:
 
         # Normalize: ensure weights sum to reasonable range
         total = sum(weights.values())
-        if total > 2.0:
-            scale = 2.0 / total
-            weights = {k: v * scale for k, v in weights.items()}
+        if total > 1.5:
+             scale = 1.5 / total
+             weights = {k: v * scale for k, v in weights.items()}
 
         return weights
 

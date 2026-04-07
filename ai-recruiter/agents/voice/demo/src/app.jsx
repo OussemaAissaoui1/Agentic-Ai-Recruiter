@@ -390,7 +390,7 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
   // Voice state
   const [isRecording, setIsRecording] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
-  const [inputMode, setInputMode] = useState("text"); // "text" | "voice"
+  const [inputMode, setInputMode] = useState("voice"); // "text" | "voice"
   const [vadSpeaking, setVadSpeaking] = useState(false); // Silero VAD speech state
 
   const lipSyncRef = useRef(null);
@@ -576,6 +576,23 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
     }
     stopRecording();
   }, [liveTranscript, stopRecording]);
+
+  // Auto-restart recording after sending voice transcript (when not streaming/speaking)
+  const prevIsStreamingRef = useRef(false);
+  useEffect(() => {
+    const wasStreaming = prevIsStreamingRef.current;
+    prevIsStreamingRef.current = isStreaming;
+    // When streaming just ended and we're in voice mode and not already recording
+    if (wasStreaming && !isStreaming && inputMode === "voice" && !isRecording && !isSpeaking) {
+      const timer = setTimeout(() => {
+        if (!isRecording) {
+          console.log("[Voice] Auto-restarting mic after response completed");
+          startRecordingRef.current();
+        }
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming, inputMode, isRecording, isSpeaking]);
 
   // --- Auto-send after 4s of VAD silence ---
   const sendVoiceTranscriptRef = useRef(sendVoiceTranscript);
@@ -782,6 +799,20 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-start recording once greeting finishes (voice mode default)
+  const greetingAutoMicFired = useRef(false);
+  useEffect(() => {
+    // Fire once: when streaming ends, greeting is done, voice mode, not yet recording
+    if (!isStreaming && !greetingAutoMicFired.current && inputMode === "voice" && !isRecording && messages.length > 0) {
+      greetingAutoMicFired.current = true;
+      const timer = setTimeout(() => {
+        console.log("[Voice] Auto-starting mic after greeting");
+        startRecordingRef.current();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming, inputMode, isRecording, messages.length]);
 
   // Send message
   const sendMessage = useCallback(
@@ -1218,7 +1249,7 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
                         🎤
                       </button>
                       <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
-                        {isStreaming ? "Wait for Alex to finish…" : "Click to start recording"}
+                        {isStreaming ? "Wait for Alex to finish…" : "Starting mic automatically… or click to record"}
                       </div>
                     </div>
                   )}
@@ -1235,8 +1266,8 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
               : isRecording && liveTranscript.trim()
               ? "⏱ Auto-sends in 2s of silence · click ↑ to send now"
               : isRecording
-              ? "Listening… click ■ to stop or ↑ to send"
-              : "Click 🎤 to record · Edit transcript before sending"}
+              ? "Listening… speak now · auto-sends after silence"
+              : "Voice mode active · mic starts automatically"}
           </div>
         </div>
       </div>
