@@ -126,7 +126,7 @@ export class LipSyncAudioQueue {
     if (!this.playing || !this.analyser) {
       // Decay to zero when not playing
       for (const name of VISEME_NAMES) {
-        this.currentWeights[name] *= 0.85;
+        this.currentWeights[name] *= 0.92;
         if (this.currentWeights[name] < 0.01) this.currentWeights[name] = 0;
       }
       return this.currentWeights;

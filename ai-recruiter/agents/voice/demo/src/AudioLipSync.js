@@ -126,7 +126,7 @@ export class LipSyncAudioQueue {
     if (!this.playing || !this.analyser) {
       // Decay to zero when not playing
       for (const name of VISEME_NAMES) {
-        this.currentWeights[name] *= 0.85;
+        this.currentWeights[name] *= 0.92;
         if (this.currentWeights[name] < 0.01) this.currentWeights[name] = 0;
       }
       return this.currentWeights;
@@ -212,11 +212,11 @@ export class LipSyncAudioQueue {
     const energy = Math.min(1.0, overall * 3);
 
     // Vowels (RPM names)
-    weights["viseme_aa"] = Math.min(1.0, f1 * 2.0 * energy);
-    weights["viseme_E"]  = Math.min(1.0, f2 * 1.4 * energy * (1 - f1 * 0.4));
-    weights["viseme_I"]  = Math.min(1.0, f2 * 1.6 * (1 - f1) * energy);
-    weights["viseme_O"]  = Math.min(1.0, f1 * (1 - f2 * 0.7) * energy * 1.5);
-    weights["viseme_U"]  = Math.min(1.0, (1 - f2) * (1 - f1 * 0.4) * energy * 0.9);
+    weights["viseme_aa"] = Math.min(0.75, f1 * 1.2 * energy);
+    weights["viseme_E"]  = Math.min(0.65, f2 * 0.9 * energy * (1 - f1 * 0.4));
+    weights["viseme_I"]  = Math.min(0.60, f2 * 1.0 * (1 - f1) * energy);
+    weights["viseme_O"]  = Math.min(0.70, f1 * (1 - f2 * 0.7) * energy * 1.0);
+    weights["viseme_U"]  = Math.min(0.55, (1 - f2) * (1 - f1 * 0.4) * energy * 0.7);
 
     // Fricatives
     weights["viseme_SS"] = Math.min(1.0, sib * 2.5 * energy);
