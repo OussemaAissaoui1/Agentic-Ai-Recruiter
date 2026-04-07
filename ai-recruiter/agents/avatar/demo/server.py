@@ -120,7 +120,7 @@ async def startup():
     try:
         from agent import NLPAgent
         _nlp_agent = NLPAgent(
-            model_path="oussema2021/fintuned_v3_AiRecruter",
+            model_path="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
             enable_scorer=True,
             scorer_model="Qwen/Qwen2.5-1.5B-Instruct",
             enable_refiner=True,

@@ -70,7 +70,7 @@ async def startup():
     print("[server] Loading NLP agent...")
     from agent import NLPAgent
     _agent = NLPAgent(
-        model_path="oussema2021/fintuned_v3_AiRecruter",
+        model_path="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
         enable_scorer=True,  # Enable answer analysis
         scorer_model="Qwen/Qwen2.5-1.5B-Instruct",
         enable_refiner=True,  # Enable question refinement

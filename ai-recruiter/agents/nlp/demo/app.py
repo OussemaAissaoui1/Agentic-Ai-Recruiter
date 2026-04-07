@@ -208,7 +208,7 @@ def load_agent():
     from agent import NLPAgent
 
     agent = NLPAgent(
-        model_path="oussema2021/fintuned_v3_AiRecruter",
+        model_path="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
         enable_scorer=True,  # Enable CPU scorer for intelligent answer analysis
         scorer_model="Qwen/Qwen2.5-1.5B-Instruct",
         enable_refiner=True,  # Enable question refinement

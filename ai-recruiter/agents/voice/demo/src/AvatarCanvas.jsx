@@ -2,23 +2,21 @@
  * AvatarCanvas — Full-body 3D avatar with production lip sync and
  * natural conversational gestures.
  *
- * FIXES (v4):
- *  ROOT CAUSE: RPM T-pose has arms at 90° from vertical (horizontal).
- *  Bringing them DOWN requires a large rotation:
- *    RightArm z → must be POSITIVE +1.35 to adduct arm downward
- *    LeftArm  z → must be NEGATIVE -1.35
- *  Previous attempts:
- *    v2: z: -1.55/+1.55 → WRONG SIGN, arms went UP toward head
- *    v3: z: +0.18/-0.18 → RIGHT SIGN but only ~10° down, still near T-pose
- *    v4: z: +1.35/-1.35 → RIGHT SIGN, correct magnitude (~77° = natural hang)
+ * ARM FIX HISTORY:
+ *  ROOT CAUSE: RPM Shoulder bone carries a complex ~90° rotation that
+ *  transforms the Arm bone's local coordinate frame. After this transform,
+ *  local X (not Z!) corresponds to adduction (arm going down from T-pose).
  *
- *  Also added a console.log of actual bone rotations at load so you can
- *  verify/tune if the rig differs from standard RPM convention.
+ *  v2-v4: Used Z rotation → moved arm forward/backward, not down
+ *  v5: Increased Z magnitude → arms went behind the avatar (confirmed by screenshot)
+ *  v6: Computed exact IK offsets via scipy (parent_inv * target_world).
+ *      Arm: X=+1.56 (≈90° adduction), small Y/Z for natural angle.
+ *      Values verified against actual GLB bone quaternions.
  */
 
 import { Suspense, useEffect, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useGLTF, OrbitControls, Environment, ContactShadows } from "@react-three/drei";
+import { useGLTF, OrbitControls, Environment } from "@react-three/drei";
 import * as THREE from "three";
 
 const AVATAR_URL = "/avatar/model.glb";
@@ -26,23 +24,74 @@ const IDLE_BLINK_INTERVAL = 3200;
 const IDLE_BLINK_DURATION = 160;
 
 // ─── Natural rest pose ────────────────────────────────────────────────────────
-// RPM/Mixamo rig: T-pose arms are horizontal (z≈0 for upper arm bones).
-//   RightArm +z → arm rotates DOWN (adduction toward body)
-//   RightArm -z → arm rotates UP  (abduction away from body)
-// Natural hang ≈ 77° below horizontal → z: +1.35 for right, -1.35 for left.
+// Arm offsets are computed at runtime via computeArmHangOffsets() which uses
+// Three.js world transforms to find the exact local Euler angles that bring
+// each arm from T-pose to a natural hanging position.
+// Only shoulders/forearms/hands use static offsets.
 const NATURAL_POSE = {
   RightShoulder: { x:  0.00, y:  0.00, z: -0.06 },
   LeftShoulder:  { x:  0.00, y:  0.00, z:  0.06 },
 
-  RightArm:      { x:  0.00, y:  0.00, z:  1.50 },  // only z rotation = straight down
-  LeftArm:       { x:  0.00, y:  0.00, z: -1.50 },  // only z rotation = straight down
+  // Arm values are REPLACED at init by computeArmHangOffsets — these are fallbacks
+  RightArm:      { x:  0.00, y:  0.00, z:  0.00 },
+  LeftArm:       { x:  0.00, y:  0.00, z:  0.00 },
 
-  RightForeArm:  { x:  0.00, y: -0.30, z:  0.00 },  // slight inward bend only
-  LeftForeArm:   { x:  0.00, y:  0.30, z:  0.00 },
+  RightForeArm:  { x:  0.15, y:  0.00, z:  0.00 },
+  LeftForeArm:   { x:  0.15, y:  0.00, z:  0.00 },
 
   RightHand:     { x:  0.00, y:  0.00, z:  0.00 },
   LeftHand:      { x:  0.00, y:  0.00, z:  0.00 },
 };
+
+/**
+ * Compute local Euler offsets to hang arms down from T-pose using
+ * Three.js's own world matrix chain (avoids scipy/manual parent mismatch).
+ */
+function computeArmHangOffsets(boneMap, origRot) {
+  const results = {};
+  for (const armName of ["LeftArm", "RightArm"]) {
+    const bone = boneMap[armName];
+    if (!bone || !bone.parent) continue;
+    const orig = origRot[armName];
+
+    // 1. Make sure world matrices are current with T-pose rotations
+    bone.rotation.set(orig.x, orig.y, orig.z);
+    bone.updateWorldMatrix(true, false);
+
+    // 2. Get the bone's +Y axis in world space (bone chain direction in T-pose)
+    const boneY = new THREE.Vector3(0, 1, 0).applyQuaternion(
+      new THREE.Quaternion().setFromRotationMatrix(bone.matrixWorld)
+    ).normalize();
+
+    // 3. Target direction: slightly forward of straight down
+    const target = new THREE.Vector3(0, -0.985, -0.174).normalize(); // ~10° forward
+
+    // 4. Quaternion that rotates boneY → target in world space
+    const deltaWorld = new THREE.Quaternion().setFromUnitVectors(boneY, target);
+
+    // 5. Current world quaternion of the bone
+    const currentWorld = new THREE.Quaternion().setFromRotationMatrix(bone.matrixWorld);
+
+    // 6. Desired world quaternion = deltaWorld * currentWorld
+    const desiredWorld = deltaWorld.clone().multiply(currentWorld);
+
+    // 7. Parent's world quaternion
+    const parentWorld = new THREE.Quaternion().setFromRotationMatrix(bone.parent.matrixWorld);
+
+    // 8. Desired LOCAL quaternion = parentWorld⁻¹ * desiredWorld
+    const desiredLocal = parentWorld.clone().invert().multiply(desiredWorld);
+
+    // 9. Convert to Euler (XYZ order)
+    const euler = new THREE.Euler().setFromQuaternion(desiredLocal, "XYZ");
+
+    // 10. Offset = desired - original
+    const offset = { x: euler.x - orig.x, y: euler.y - orig.y, z: euler.z - orig.z };
+
+    console.log(`[Avatar] ${armName} boneY_world=(${boneY.x.toFixed(3)},${boneY.y.toFixed(3)},${boneY.z.toFixed(3)}) offset=(${offset.x.toFixed(3)},${offset.y.toFixed(3)},${offset.z.toFixed(3)})`);
+    results[armName] = offset;
+  }
+  return results;
+}
 
 // ─── Conversational gesture library ──────────────────────────────────────────
 // Offsets are ADDED on top of NATURAL_POSE. Max ≈ 0.22 rad (≈ 13°).
@@ -216,14 +265,19 @@ function AvatarModel({ lipSyncRef, isSpeaking, isThinking, controlsRef }) {
       }
       origRotRef.current = orig;
 
-      // Debug: verify actual rig rotations
-      ["RightArm","LeftArm","RightForeArm","LeftForeArm"].forEach(n => {
-        const b = boneMap[n];
-        if (b) console.log(`[Avatar] ${n} orig:`, b.rotation.x.toFixed(3), b.rotation.y.toFixed(3), b.rotation.z.toFixed(3));
-      });
+      // Ensure consistent Euler rotation order on arm chain bones
+      const armChain = ["RightShoulder","LeftShoulder","RightArm","LeftArm",
+                        "RightForeArm","LeftForeArm","RightHand","LeftHand"];
+      armChain.forEach(n => { const b = boneMap[n]; if (b) b.rotation.order = "XYZ"; });
+
+      // Compute arm hang offsets using Three.js world matrices (exact, no manual parent math)
+      const armOffsets = computeArmHangOffsets(boneMap, orig);
+      for (const [boneName, offset] of Object.entries(armOffsets)) {
+        NATURAL_POSE[boneName] = offset;
+      }
+      console.log("[Avatar] Computed arm offsets:", JSON.stringify(armOffsets, (k,v) => typeof v === 'number' ? +v.toFixed(4) : v));
 
       // Apply NATURAL_POSE immediately so arms start in resting position
-      // (avoids the slow lerp-from-T-pose on first load)
       for (const [boneName, offset] of Object.entries(NATURAL_POSE)) {
         const bone = boneMap[boneName];
         const o = orig[boneName];
@@ -233,7 +287,9 @@ function AvatarModel({ lipSyncRef, isSpeaking, isThinking, controlsRef }) {
           bone.rotation.z = o.z + offset.z;
         }
       }
-      console.log("[Avatar] Applied NATURAL_POSE directly on init");
+      // Force world matrix update after applying offsets
+      scene.updateMatrixWorld(true);
+      console.log("[Avatar] Applied NATURAL_POSE — arms should hang naturally");
     }
 
     if (!cameraReady.current) {
@@ -241,10 +297,14 @@ function AvatarModel({ lipSyncRef, isSpeaking, isThinking, controlsRef }) {
       const box = new THREE.Box3().setFromObject(scene);
       const size = new THREE.Vector3(); const center = new THREE.Vector3();
       box.getSize(size); box.getCenter(center);
-      const targetY = box.min.y + size.y * 0.62;
-      const fov = 28;
-      const dist = (size.y * 1.15 / 2) / Math.tan(THREE.MathUtils.degToRad(fov / 2));
-      camera.position.set(center.x, targetY, center.z + Math.max(dist, 3.2));
+
+      // Frame the face: look at ~85% up the body (face level), tight FOV
+      const targetY = box.min.y + size.y * 0.85;
+      const fov = 18;
+      // Frame roughly the head height (~20% of body) with some padding
+      const headHeight = size.y * 0.22;
+      const dist = (headHeight / 2) / Math.tan(THREE.MathUtils.degToRad(fov / 2));
+      camera.position.set(center.x, targetY, center.z + Math.max(dist, 0.8));
       camera.fov = fov; camera.near = 0.01; camera.far = 60;
       camera.updateProjectionMatrix();
       if (controlsRef?.current) {
@@ -345,19 +405,38 @@ function AvatarModel({ lipSyncRef, isSpeaking, isThinking, controlsRef }) {
           for (const n of ["eyeBlinkLeft","eyeBlinkRight"]) { const idx = dict[n]; if (idx !== undefined) infl[idx] = w * 0.9; }
         }
       }
-      if (isSpeaking) {
+      // ─── Friendly resting face (always on) ─────────────────────────────
+      // Warm smile + cheek raise + soft eyes, slightly stronger when speaking
+      {
+        const smileBase = isSpeaking ? 0.45 : 0.35;
+        const cheekBase = isSpeaking ? 0.25 : 0.18;
+        const eyeSquint = isSpeaking ? 0.12 : 0.08;
+        const browBase  = isThinking ? (0.15 + Math.sin(t * 1.5) * 0.05) : 0.05;
+        // Subtle living variation so the face doesn't feel frozen
+        const breathe = Math.sin(t * 0.8) * 0.03;
+
         for (const mesh of meshes) {
           const dict = mesh.morphTargetDictionary; const infl = mesh.morphTargetInfluences;
           if (!dict || !infl) continue;
-          for (const n of ["mouthSmileLeft","mouthSmileRight"]) { const idx = dict[n]; if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], 0.08, 0.025); }
-        }
-      }
-      if (isThinking) {
-        for (const mesh of meshes) {
-          const dict = mesh.morphTargetDictionary; const infl = mesh.morphTargetInfluences;
-          if (!dict || !infl) continue;
-          const idx = dict["browInnerUp"];
-          if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], 0.15 + Math.sin(t * 1.5) * 0.05, 0.04);
+          // Smile
+          for (const n of ["mouthSmileLeft","mouthSmileRight"]) {
+            const idx = dict[n]; if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], smileBase + breathe, 0.04);
+          }
+          // Cheek raise (Duchenne smile — makes it look genuine)
+          for (const n of ["cheekSquintLeft","cheekSquintRight"]) {
+            const idx = dict[n]; if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], cheekBase + breathe * 0.5, 0.03);
+          }
+          // Soft eye squint (warm gaze)
+          for (const n of ["eyeSquintLeft","eyeSquintRight"]) {
+            const idx = dict[n]; if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], eyeSquint, 0.03);
+          }
+          // Gentle brow position
+          const browIdx = dict["browInnerUp"];
+          if (browIdx !== undefined) infl[browIdx] = THREE.MathUtils.lerp(infl[browIdx], browBase, 0.04);
+          // Slight dimples
+          for (const n of ["mouthDimpleLeft","mouthDimpleRight"]) {
+            const idx = dict[n]; if (idx !== undefined) infl[idx] = THREE.MathUtils.lerp(infl[idx], 0.10, 0.03);
+          }
         }
       }
     }
@@ -378,8 +457,8 @@ function AvatarModel({ lipSyncRef, isSpeaking, isThinking, controlsRef }) {
     // Arms — slow lerp for large z transition (0.06 avoids snapping)
     setBoneWithPose("RightShoulder", gestureOffsets["RightShoulder"], 0.10);
     setBoneWithPose("LeftShoulder",  gestureOffsets["LeftShoulder"],  0.10);
-    setBoneWithPose("RightArm",      gestureOffsets["RightArm"],      0.06);
-    setBoneWithPose("LeftArm",       gestureOffsets["LeftArm"],       0.06);
+    setBoneWithPose("RightArm",      gestureOffsets["RightArm"],      0.12);
+    setBoneWithPose("LeftArm",       gestureOffsets["LeftArm"],       0.12);
     setBoneWithPose("RightForeArm",  gestureOffsets["RightForeArm"],  0.09);
     setBoneWithPose("LeftForeArm",   gestureOffsets["LeftForeArm"],   0.09);
 
@@ -446,7 +525,7 @@ export default function AvatarCanvas({ lipSyncRef, isSpeaking, isThinking }) {
       <Canvas
         gl={{ antialias:true, alpha:true, powerPreference:"high-performance" }}
         dpr={[1,2]} style={{ background:"transparent" }}
-        camera={{ fov:28, near:0.01, far:60, position:[0,1.1,4] }}
+        camera={{ fov:18, near:0.01, far:60, position:[0,1.55,1.2] }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.5;
@@ -459,11 +538,10 @@ export default function AvatarCanvas({ lipSyncRef, isSpeaking, isThinking }) {
         <pointLight position={[0,2,3]} intensity={0.5} />
         <Suspense fallback={<AvatarLoading />}>
           <AvatarModel lipSyncRef={lipSyncRef} isSpeaking={isSpeaking} isThinking={isThinking} controlsRef={controlsRef} />
-          <ContactShadows position={[0,-0.88,0]} opacity={0.4} scale={5} blur={2.5} />
           <Environment preset="studio" />
         </Suspense>
         <OrbitControls ref={controlsRef} enablePan={false} enableZoom={true} enableRotate={true}
-          minDistance={1.8} maxDistance={6} minPolarAngle={Math.PI/5} maxPolarAngle={Math.PI/1.7} />
+          minDistance={0.6} maxDistance={1.8} minPolarAngle={Math.PI/3} maxPolarAngle={Math.PI/2.2} />
       </Canvas>
       <div style={{
         position:"absolute", bottom:16, left:"50%", transform:"translateX(-50%)",
