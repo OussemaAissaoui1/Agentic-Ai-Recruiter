@@ -190,7 +190,7 @@ class NLPAgent:
 
     def __init__(
         self,
-        model_path: str = "oussema2021/fintuned_v3_AiRecruter",
+        model_path: str = "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
         dtype: str = "bfloat16",
         max_model_len: int = 2048,
         gpu_memory_utilization: float = 0.60,

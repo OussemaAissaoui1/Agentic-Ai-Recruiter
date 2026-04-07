@@ -4,14 +4,15 @@
  * Full interview interface with:
  *   - 3D GLB avatar with real-time lip sync
  *   - Streaming SSE with text tokens + audio + server-side visemes
- *   - Real-time Speech-to-Text via Faster Whisper (WebSocket)
+ *   - Real-time Speech-to-Text via Moonshine Voice (WebSocket streaming)
+ *   - Silero VAD for speech detection / turn-taking
  *   - Live transcript display in chat panel
  *   - Text input option alongside voice
  *   - Chat history with message bubbles
  *
  * Architecture:
  *   Browser ◄─SSE─► FastAPI (NLP agent + Avatar agent)
- *   Mic ──► WebSocket ──► Faster Whisper ──► Live transcript
+ *   Mic ──► WebSocket ──► Silero VAD + Moonshine ──► Live transcript
  *   Audio ──► LipSyncAudioQueue ──► AnalyserNode ──► Viseme weights
  *   Three.js ◄── Viseme weights ──► GLB morph targets
  */
@@ -255,6 +256,7 @@ function SetupScreen({ onStart }) {
   const avatarOk = status?.avatar_ready;
   const nlpOk = status?.nlp_ready;
   const sttOk = status?.stt_ready;
+  const vadOk = status?.vad_ready;
 
   return (
     <div style={{
@@ -285,7 +287,8 @@ function SetupScreen({ onStart }) {
           {[
             { label: "NLP Agent", ok: nlpOk },
             { label: "Avatar", ok: avatarOk },
-            { label: "STT (Whisper)", ok: sttOk },
+            { label: "STT (Moonshine)", ok: sttOk },
+            { label: "VAD (Silero)", ok: vadOk },
             { label: "GPU", ok: status?.engine_ready, extra: status?.gpu_free_gb ? `${status.gpu_free_gb}GB` : null },
           ].map(({ label, ok, extra }) => (
             <div key={label} style={{
@@ -388,6 +391,7 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
   const [isRecording, setIsRecording] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
   const [inputMode, setInputMode] = useState("text"); // "text" | "voice"
+  const [vadSpeaking, setVadSpeaking] = useState(false); // Silero VAD speech state
 
   const lipSyncRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -400,6 +404,7 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
   const processorRef = useRef(null);
   const wsRef = useRef(null);
   const micAnalyserRef = useRef(null);
+  const vadSilenceTimerRef = useRef(null); // auto-send after silence
 
   // Initialize lip-sync audio queue
   useEffect(() => {
@@ -471,6 +476,8 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
             setLiveTranscript(data.text);
           } else if (data.type === "final") {
             setLiveTranscript(data.text);
+          } else if (data.type === "vad") {
+            setVadSpeaking(data.speech);
           } else if (data.type === "error") {
             console.error("[Voice] STT error:", data.message);
           }
@@ -551,7 +558,12 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
     }
 
     micAnalyserRef.current = null;
+    if (vadSilenceTimerRef.current) {
+      clearTimeout(vadSilenceTimerRef.current);
+      vadSilenceTimerRef.current = null;
+    }
     setIsRecording(false);
+    setVadSpeaking(false);
     console.log("[Voice] Recording stopped");
   }, []);
 
@@ -564,6 +576,53 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
     }
     stopRecording();
   }, [liveTranscript, stopRecording]);
+
+  // --- Auto-send after 4s of VAD silence ---
+  const sendVoiceTranscriptRef = useRef(sendVoiceTranscript);
+  useEffect(() => { sendVoiceTranscriptRef.current = sendVoiceTranscript; }, [sendVoiceTranscript]);
+
+  useEffect(() => {
+    // Clear any pending timer whenever VAD state changes
+    if (vadSilenceTimerRef.current) {
+      clearTimeout(vadSilenceTimerRef.current);
+      vadSilenceTimerRef.current = null;
+    }
+
+    // Start a 4s countdown when: recording, VAD says silence, and there's text
+    if (isRecording && !vadSpeaking && liveTranscript.trim()) {
+      vadSilenceTimerRef.current = setTimeout(() => {
+        console.log("[Voice] Auto-sending after 2s of silence");
+        sendVoiceTranscriptRef.current();
+      }, 2000);
+    }
+
+    return () => {
+      if (vadSilenceTimerRef.current) {
+        clearTimeout(vadSilenceTimerRef.current);
+        vadSilenceTimerRef.current = null;
+      }
+    };
+  }, [vadSpeaking, isRecording, liveTranscript]);
+
+  // --- Auto-restart recording after avatar finishes speaking ---
+  const wasSpeakingRef = useRef(false);
+  const startRecordingRef = useRef(startRecording);
+  useEffect(() => { startRecordingRef.current = startRecording; }, [startRecording]);
+
+  useEffect(() => {
+    const wasSpeaking = wasSpeakingRef.current;
+    wasSpeakingRef.current = isSpeaking;
+
+    // Trigger when avatar transitions from speaking → silent
+    if (wasSpeaking && !isSpeaking && inputMode === "voice" && !isStreaming && !isRecording) {
+      // Small delay to let audio context finish
+      const timer = setTimeout(() => {
+        console.log("[Voice] Auto-restarting recording after LLM response");
+        startRecordingRef.current();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isSpeaking, inputMode, isStreaming, isRecording]);
 
   // --- SSE stream handler ---
   const handleSSEStream = useCallback(async (url, userText, isGreeting = false) => {
@@ -825,11 +884,11 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
           padding: "6px 18px", borderRadius: 20,
           background: "rgba(0,0,0,0.55)", backdropFilter: "blur(10px)",
           fontSize: 13, letterSpacing: 0.5, pointerEvents: "none",
-          color: isSpeaking ? "#818cf8" : isThinking ? "#a78bfa" : isRecording ? "#ef4444" : "#475569",
+          color: isSpeaking ? "#818cf8" : isThinking ? "#a78bfa" : isRecording && vadSpeaking ? "#22c55e" : isRecording ? "#ef4444" : "#475569",
           transition: "color 0.3s",
           border: "1px solid rgba(255,255,255,0.08)",
         }}>
-          {isSpeaking ? "● Speaking" : isThinking ? "● Thinking…" : isRecording ? "● Listening (mic on)" : isStreaming ? "● Generating…" : "● Ready"}
+          {isSpeaking ? "● Speaking" : isThinking ? "● Thinking…" : isRecording && vadSpeaking ? "● Voice detected" : isRecording ? "● Listening (mic on)" : isStreaming ? "● Generating…" : "● Ready"}
         </div>
 
         {/* Candidate name badge */}
@@ -919,20 +978,27 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
                 maxWidth: "72%",
                 padding: "12px 16px",
                 borderRadius: "18px 4px 18px 18px",
-                background: "rgba(239,68,68,0.08)",
-                border: "1px solid rgba(239,68,68,0.25)",
-                color: "#fca5a5",
+                background: vadSpeaking ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+                border: `1px solid ${vadSpeaking ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+                color: vadSpeaking ? "#86efac" : "#fca5a5",
                 fontSize: 15,
                 lineHeight: 1.6,
                 fontStyle: "italic",
+                transition: "background 0.3s, border-color 0.3s, color 0.3s",
               }}>
-                <span style={{ fontSize: 11, color: "#ef4444", display: "block", marginBottom: 4 }}>
-                  🎤 Live transcript:
+                <span style={{
+                  fontSize: 11,
+                  color: vadSpeaking ? "#22c55e" : "#ef4444",
+                  display: "block", marginBottom: 4,
+                  transition: "color 0.3s",
+                }}>
+                  {vadSpeaking ? "🗣️ Speaking:" : "🎤 Live transcript:"}
                 </span>
                 {liveTranscript}
                 <span style={{
                   display: "inline-block", width: 8, height: 14,
-                  background: "#ef4444", marginLeft: 3, verticalAlign: "middle",
+                  background: vadSpeaking ? "#22c55e" : "#ef4444",
+                  marginLeft: 3, verticalAlign: "middle",
                   borderRadius: 1, animation: "blink 0.8s step-end infinite",
                 }} />
               </div>
@@ -1026,18 +1092,29 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
                   {/* Waveform visualizer */}
                   <MicVisualizer analyserRef={micAnalyserRef} />
 
+                  {/* VAD indicator dot */}
+                  <div style={{
+                    width: 12, height: 12, borderRadius: "50%", flexShrink: 0,
+                    background: vadSpeaking ? "#22c55e" : "#475569",
+                    boxShadow: vadSpeaking ? "0 0 8px rgba(34,197,94,0.6)" : "none",
+                    transition: "background 0.2s, box-shadow 0.2s",
+                  }}
+                    title={vadSpeaking ? "Voice detected" : "Silence"}
+                  />
+
                   {/* Transcript preview (editable) */}
                   <div style={{ flex: 1, position: "relative" }}>
                     <input
                       value={liveTranscript}
                       onChange={(e) => setLiveTranscript(e.target.value)}
-                      placeholder="Listening… speak now"
+                      placeholder={vadSpeaking ? "Hearing you…" : "Listening… speak now"}
                       style={{
                         width: "100%",
-                        background: "rgba(239,68,68,0.06)",
-                        border: "1px solid rgba(239,68,68,0.25)",
-                        borderRadius: 12, color: "#fca5a5",
+                        background: vadSpeaking ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)",
+                        border: `1px solid ${vadSpeaking ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+                        borderRadius: 12, color: vadSpeaking ? "#86efac" : "#fca5a5",
                         padding: "12px 14px", fontSize: 14, outline: "none",
+                        transition: "background 0.3s, border-color 0.3s, color 0.3s",
                       }}
                     />
                   </div>
@@ -1153,8 +1230,12 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
           <div style={{ textAlign: "center", marginTop: 6, color: "#334155", fontSize: 11 }}>
             {inputMode === "text"
               ? "Enter to send · Shift+Enter for new line"
+              : isRecording && vadSpeaking
+              ? "🗣️ Voice detected — speaking…"
+              : isRecording && liveTranscript.trim()
+              ? "⏱ Auto-sends in 2s of silence · click ↑ to send now"
               : isRecording
-              ? "Speaking… click ■ to stop or ↑ to send"
+              ? "Listening… click ■ to stop or ↑ to send"
               : "Click 🎤 to record · Edit transcript before sending"}
           </div>
         </div>
@@ -1173,6 +1254,10 @@ function InterviewScreen({ sessionId, cv, role, candidateName, onReset }) {
         @keyframes pulse-border {
           0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
           50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+        }
+        @keyframes vad-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+          50% { box-shadow: 0 0 12px 4px rgba(34,197,94,0.15); }
         }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }

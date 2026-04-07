@@ -2,8 +2,8 @@
 FastAPI Backend — AI Recruiter Voice Interview Demo
 
 Extends the Avatar demo server with real-time Speech-to-Text (STT)
-using Faster Whisper. Supports both WebSocket-based microphone streaming
-and HTTP POST for audio file transcription.
+using Moonshine Voice + Silero VAD. Supports both WebSocket-based microphone
+streaming and HTTP POST for audio file transcription.
 
 Endpoints:
     --- NLP Pipeline ---
@@ -35,15 +35,14 @@ import io
 import json
 import logging
 import os
-import struct
 import sys
-import tempfile
 import time
-import traceback
 import uuid
 import wave
 from pathlib import Path
 from typing import Optional
+
+import numpy as np
 
 # Resolve paths so imports work regardless of cwd
 DEMO_DIR = Path(__file__).resolve().parent
@@ -80,7 +79,7 @@ for noisy in ("urllib3", "httpcore", "httpx", "uvicorn.access"):
 app = FastAPI(
     title="AI Recruiter Voice API",
     version="2.0",
-    description="NLP Interview Pipeline + 3D Avatar + Voice STT (Faster Whisper)",
+    description="NLP Interview Pipeline + 3D Avatar + Voice STT (Moonshine + Silero VAD)",
 )
 
 app.add_middleware(
@@ -97,7 +96,10 @@ app.add_middleware(
 
 _nlp_agent = None
 _avatar_agent = None
-_whisper_model = None
+_moonshine_transcriber = None
+_moonshine_model_path = None
+_moonshine_model_arch = None
+_silero_vad_model = None
 
 
 def get_nlp_agent():
@@ -112,10 +114,16 @@ def get_avatar_agent():
     return _avatar_agent
 
 
-def get_whisper():
-    if _whisper_model is None:
-        raise HTTPException(status_code=503, detail="Whisper STT not ready yet")
-    return _whisper_model
+def get_moonshine():
+    if _moonshine_transcriber is None:
+        raise HTTPException(status_code=503, detail="Moonshine STT not ready yet")
+    return _moonshine_transcriber
+
+
+def get_silero_vad():
+    if _silero_vad_model is None:
+        raise HTTPException(status_code=503, detail="Silero VAD not ready yet")
+    return _silero_vad_model
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +132,8 @@ def get_whisper():
 
 @app.on_event("startup")
 async def startup():
-    global _nlp_agent, _avatar_agent, _whisper_model
+    global _nlp_agent, _avatar_agent, _moonshine_transcriber
+    global _moonshine_model_path, _moonshine_model_arch, _silero_vad_model
 
     logger.info("=" * 60)
     logger.info("  AI Recruiter Voice Server — Starting")
@@ -136,8 +145,8 @@ async def startup():
     try:
         from agent import NLPAgent
         _nlp_agent = NLPAgent(
-            model_path="oussema2021/fintuned_v3_AiRecruter",
-            enable_scorer=True,
+            model_path="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
+            enable_scorer=False,
             scorer_model="Qwen/Qwen2.5-1.5B-Instruct",
             enable_refiner=True,
             refiner_model="Qwen/Qwen2.5-1.5B-Instruct",
@@ -167,30 +176,46 @@ async def startup():
         logger.error("[2/3] Avatar agent failed: %s", e, exc_info=True)
         raise
 
-    # --- Load Faster Whisper STT ---
-    logger.info("[3/3] Loading Faster Whisper STT...")
+    # --- Load Moonshine STT + Silero VAD ---
+    logger.info("[3/3] Loading Moonshine STT + Silero VAD...")
     try:
-        from faster_whisper import WhisperModel
+        import torch
+        from moonshine_voice import (
+            Transcriber,
+            TranscriptEventListener,
+            get_model_for_language,
+        )
 
-        # Use small model for balance of speed/accuracy, GPU if available
-        whisper_model_size = os.environ.get("WHISPER_MODEL", "small")
-        device = "cuda" if _check_gpu() else "cpu"
-        compute_type = "float16" if device == "cuda" else "int8"
-
+        # Download / locate Moonshine English model
+        _moonshine_model_path, _moonshine_model_arch = get_model_for_language("en")
         logger.info(
-            "[3/3] Loading Whisper model=%s device=%s compute=%s",
-            whisper_model_size, device, compute_type,
+            "[3/3] Moonshine model path=%s arch=%s",
+            _moonshine_model_path, _moonshine_model_arch,
         )
-        _whisper_model = WhisperModel(
-            whisper_model_size,
-            device=device,
-            compute_type=compute_type,
+
+        # Create global Transcriber (model loaded once, shared across streams)
+        _moonshine_transcriber = Transcriber(
+            model_path=_moonshine_model_path,
+            model_arch=_moonshine_model_arch,
         )
-        # Warmup with a short silence
-        _warmup_whisper(_whisper_model)
-        logger.info("[3/3] Faster Whisper STT ready")
+
+        # Warmup with 1 s silence
+        silence = np.zeros(16000, dtype=np.float32).tolist()
+        _moonshine_transcriber.transcribe_without_streaming(silence, 16000)
+        logger.info("[3/3] Moonshine STT ready")
+
+        # Load Silero VAD (CPU, lightweight)
+        logger.info("[3/3] Loading Silero VAD...")
+        torch.set_num_threads(1)
+        _silero_vad_model, _silero_vad_utils = torch.hub.load(
+            repo_or_dir="snakers4/silero-vad",
+            model="silero_vad",
+            force_reload=False,
+            trust_repo=True,
+        )
+        logger.info("[3/3] Silero VAD ready")
     except Exception as e:
-        logger.error("[3/3] Faster Whisper failed: %s", e, exc_info=True)
+        logger.error("[3/3] Moonshine/Silero failed: %s", e, exc_info=True)
         logger.warning("STT will be unavailable — voice input disabled")
 
     elapsed = time.monotonic() - start
@@ -199,42 +224,29 @@ async def startup():
     logger.info("=" * 60)
 
 
-def _check_gpu() -> bool:
-    """Check if CUDA GPU is available."""
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except ImportError:
-        pass
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["nvidia-smi"], capture_output=True, text=True, timeout=5
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
+def _pcm_int16_to_float32(pcm_bytes: bytes) -> list:
+    """Convert raw PCM 16-bit signed mono bytes to a list of float32 in [-1, 1]."""
+    samples = np.frombuffer(pcm_bytes, dtype=np.int16)
+    return (samples.astype(np.float32) / 32768.0).tolist()
 
 
-def _warmup_whisper(model):
-    """Warmup Whisper with a short silence WAV."""
-    try:
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(16000)
-            wf.writeframes(b"\x00\x00" * 16000)  # 1 second silence
-        buf.seek(0)
-        # Write to a temp file since faster-whisper needs a file path
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
-            tmp.write(buf.read())
-            tmp.flush()
-            segments, _ = model.transcribe(tmp.name, beam_size=1)
-            list(segments)  # consume iterator
-        logger.info("[Whisper] Warmup complete")
-    except Exception as e:
-        logger.warning("[Whisper] Warmup failed (non-fatal): %s", e)
+def _wav_bytes_to_float32(wav_bytes: bytes) -> tuple:
+    """Decode WAV bytes → (list[float], sample_rate)."""
+    buf = io.BytesIO(wav_bytes)
+    with wave.open(buf, "rb") as wf:
+        sr = wf.getframerate()
+        raw = wf.readframes(wf.getnframes())
+        n_channels = wf.getnchannels()
+        width = wf.getsampwidth()
+    if width == 2:
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    elif width == 4:
+        samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+    else:
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    if n_channels == 2:
+        samples = samples[::2]  # left channel
+    return samples.tolist(), sr
 
 
 @app.on_event("shutdown")
@@ -348,7 +360,8 @@ async def get_status():
             logger.error("Avatar status check failed: %s", e)
             result["avatar_error"] = str(e)
 
-    result["stt_ready"] = _whisper_model is not None
+    result["stt_ready"] = _moonshine_transcriber is not None
+    result["vad_ready"] = _silero_vad_model is not None
     result["ready"] = (
         result.get("nlp_ready", False)
         and result.get("avatar_ready", False)
@@ -571,16 +584,16 @@ async def extract_visemes(req: VisemeRequest):
 
 
 # ============================================================================
-# VOICE / STT ENDPOINTS — Faster Whisper
+# VOICE / STT ENDPOINTS — Moonshine + Silero VAD
 # ============================================================================
 
 @app.post("/api/transcribe")
 async def transcribe_audio(req: TranscribeRequest):
     """
-    Transcribe a base64-encoded audio file (WAV/WebM/OGG) to text.
+    Transcribe a base64-encoded WAV audio file to text using Moonshine.
     Used for the "record and send" flow.
     """
-    model = get_whisper()
+    transcriber = get_moonshine()
 
     logger.info("Transcribe request | b64_len=%d lang=%s", len(req.audio_b64), req.language)
 
@@ -594,9 +607,29 @@ async def transcribe_audio(req: TranscribeRequest):
         return {"text": "", "segments": [], "language": req.language}
 
     try:
-        text, segments = await _transcribe_bytes(model, audio_bytes, req.language)
-        logger.info("Transcription complete | text_len=%d segments=%d", len(text), len(segments))
-        return {"text": text, "segments": segments, "language": req.language}
+        audio_float, sr = _wav_bytes_to_float32(audio_bytes)
+
+        loop = asyncio.get_event_loop()
+        transcript = await loop.run_in_executor(
+            None,
+            lambda: transcriber.transcribe_without_streaming(audio_float, sr),
+        )
+
+        segments = []
+        text_parts = []
+        for line in transcript.lines:
+            text = line.text.strip()
+            if text:
+                segments.append({
+                    "start": round(line.start_time, 2),
+                    "end": round(line.start_time + line.duration, 2),
+                    "text": text,
+                })
+                text_parts.append(text)
+
+        full_text = " ".join(text_parts)
+        logger.info("Transcription complete | text_len=%d segments=%d", len(full_text), len(segments))
+        return {"text": full_text, "segments": segments, "language": req.language}
     except Exception as e:
         logger.error("Transcription failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
@@ -607,6 +640,9 @@ async def ws_transcribe(websocket: WebSocket):
     """
     WebSocket for real-time microphone streaming → live transcript.
 
+    Uses Silero VAD for speech detection / turn-taking and Moonshine Voice
+    for streaming speech-to-text.
+
     Protocol:
         Client → Server:
             - Binary frames: raw PCM audio (16-bit, 16kHz, mono)
@@ -615,30 +651,77 @@ async def ws_transcribe(websocket: WebSocket):
         Server → Client:
             - JSON text: {"type": "partial", "text": "..."} — interim result
             - JSON text: {"type": "final", "text": "..."} — stable result
+            - JSON text: {"type": "vad", "speech": true/false} — voice activity
             - JSON text: {"type": "error", "message": "..."} — error
     """
     await websocket.accept()
     logger.info("[WS] Client connected for real-time STT")
 
-    model = _whisper_model
-    if model is None:
+    transcriber = _moonshine_transcriber
+    vad_model = _silero_vad_model
+    if transcriber is None:
         await websocket.send_json({"type": "error", "message": "STT not available"})
         await websocket.close()
         return
 
-    audio_buffer = bytearray()
-    sample_rate = 16000
-    # Process audio every ~2.5 seconds of NEW audio (not cumulative)
-    chunk_duration_sec = 2.5
-    chunk_threshold = int(sample_rate * 2 * chunk_duration_sec)  # 16-bit = 2 bytes/sample
-    accumulated_text_parts = []  # finalized transcript segments
-    pending_buffer = bytearray()  # only NEW audio since last transcription
-    is_transcribing = False  # guard against overlapping transcriptions
+    # ---- Per-session state ----
+    import torch
+    from silero_vad.utils_vad import VADIterator
 
-    disconnected = False
+    vad_iterator = VADIterator(
+        vad_model,
+        sampling_rate=16000,
+        threshold=0.5,
+        min_silence_duration_ms=800,   # end-of-turn silence
+        speech_pad_ms=30,
+    ) if vad_model is not None else None
+
+    # Collect text from Moonshine events
+    from moonshine_voice import TranscriptEventListener
+
+    class _WSListener(TranscriptEventListener):
+        def __init__(self):
+            self.partial = ""
+            self.completed_parts: list[str] = []
+            self.has_new_partial = False
+            self.has_new_completion = False
+
+        def on_line_text_changed(self, event):
+            self.partial = event.line.text.strip()
+            self.has_new_partial = True
+
+        def on_line_completed(self, event):
+            text = event.line.text.strip()
+            if text:
+                self.completed_parts.append(text)
+            self.partial = ""
+            self.has_new_completion = True
+
+        def full_text(self) -> str:
+            parts = list(self.completed_parts)
+            if self.partial:
+                parts.append(self.partial)
+            return " ".join(parts)
+
+        def reset(self):
+            self.partial = ""
+            self.completed_parts.clear()
+            self.has_new_partial = False
+            self.has_new_completion = False
+
+    listener = _WSListener()
+
+    # Use a Moonshine stream for this connection so the global transcriber
+    # stays available for the HTTP endpoint.
+    stream = transcriber.create_stream()
+    stream.add_listener(listener)
+    stream.start()
+
+    sample_rate = 16000
+    is_speaking = False
 
     try:
-        while not disconnected:
+        while True:
             try:
                 message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
             except asyncio.TimeoutError:
@@ -654,28 +737,71 @@ async def ws_transcribe(websocket: WebSocket):
                 break
 
             if "bytes" in message:
-                pending_buffer.extend(message["bytes"])
+                pcm_bytes = message["bytes"]
+                if len(pcm_bytes) < 2:
+                    continue
 
-                # Only transcribe NEW audio when enough accumulates
-                if len(pending_buffer) >= chunk_threshold and not is_transcribing:
-                    is_transcribing = True
-                    try:
-                        chunk_text = await _transcribe_pcm_buffer(
-                            model, bytes(pending_buffer), sample_rate
-                        )
-                        if chunk_text:
-                            accumulated_text_parts.append(chunk_text)
-                        pending_buffer.clear()
-                        full_text = " ".join(accumulated_text_parts)
-                        if full_text:
+                audio_float = _pcm_int16_to_float32(pcm_bytes)
+                audio_tensor = torch.tensor(audio_float, dtype=torch.float32)
+
+                # --- Silero VAD: real-time speech detection ---
+                if vad_iterator is not None:
+                    # Process in 512-sample windows (required by Silero)
+                    for i in range(0, len(audio_tensor), 512):
+                        chunk = audio_tensor[i : i + 512]
+                        if len(chunk) < 512:
+                            break
+                        speech_dict = vad_iterator(chunk, return_seconds=False)
+                        if speech_dict is not None:
+                            if "start" in speech_dict:
+                                if not is_speaking:
+                                    is_speaking = True
+                                    try:
+                                        await websocket.send_json({
+                                            "type": "vad",
+                                            "speech": True,
+                                        })
+                                    except Exception:
+                                        pass
+                            elif "end" in speech_dict:
+                                if is_speaking:
+                                    is_speaking = False
+                                    try:
+                                        await websocket.send_json({
+                                            "type": "vad",
+                                            "speech": False,
+                                        })
+                                    except Exception:
+                                        pass
+
+                # --- Moonshine: streaming STT ---
+                stream.add_audio(audio_float, sample_rate)
+
+                # Push partial text updates to client
+                if listener.has_new_partial:
+                    listener.has_new_partial = False
+                    text = listener.full_text()
+                    if text:
+                        try:
                             await websocket.send_json({
                                 "type": "partial",
-                                "text": full_text,
+                                "text": text,
                             })
-                    except Exception as te:
-                        logger.warning("[WS] Transcription error: %s", te)
-                    finally:
-                        is_transcribing = False
+                        except Exception:
+                            pass
+
+                # Push completed-line updates
+                if listener.has_new_completion:
+                    listener.has_new_completion = False
+                    text = listener.full_text()
+                    if text:
+                        try:
+                            await websocket.send_json({
+                                "type": "partial",
+                                "text": text,
+                            })
+                        except Exception:
+                            pass
 
             elif "text" in message:
                 try:
@@ -684,27 +810,30 @@ async def ws_transcribe(websocket: WebSocket):
                     continue
 
                 if cmd.get("command") == "stop":
-                    # Final transcription of remaining pending audio
-                    if len(pending_buffer) > 1000:
-                        chunk_text = await _transcribe_pcm_buffer(
-                            model, bytes(pending_buffer), sample_rate
-                        )
-                        if chunk_text:
-                            accumulated_text_parts.append(chunk_text)
-                    pending_buffer.clear()
-                    full_text = " ".join(accumulated_text_parts)
+                    # Finalize: stop triggers LineCompleted for any active line
+                    stream.stop()
+                    final_text = listener.full_text()
                     try:
                         await websocket.send_json({
                             "type": "final",
-                            "text": full_text,
+                            "text": final_text,
                         })
                     except Exception:
                         pass
-                    accumulated_text_parts.clear()
+                    # Prepare for next utterance
+                    listener.reset()
+                    if vad_iterator is not None:
+                        vad_iterator.reset_states()
+                    is_speaking = False
+                    stream.start()
 
                 elif cmd.get("command") == "reset":
-                    pending_buffer.clear()
-                    accumulated_text_parts.clear()
+                    stream.stop()
+                    listener.reset()
+                    if vad_iterator is not None:
+                        vad_iterator.reset_states()
+                    is_speaking = False
+                    stream.start()
                     try:
                         await websocket.send_json({"type": "reset", "text": ""})
                     except Exception:
@@ -724,74 +853,11 @@ async def ws_transcribe(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
-
-
-async def _transcribe_bytes(model, audio_bytes: bytes, language: str = "en"):
-    """Transcribe audio bytes (any format) using Faster Whisper."""
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
-        tmp.write(audio_bytes)
-        tmp.flush()
-
-        loop = asyncio.get_event_loop()
-        segments_raw, info = await loop.run_in_executor(
-            None,
-            lambda: model.transcribe(
-                tmp.name,
-                beam_size=5,
-                language=language,
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
-            ),
-        )
-        segments = []
-        full_text_parts = []
-        for seg in segments_raw:
-            segments.append({
-                "start": round(seg.start, 2),
-                "end": round(seg.end, 2),
-                "text": seg.text.strip(),
-            })
-            full_text_parts.append(seg.text.strip())
-
-        return " ".join(full_text_parts), segments
-
-
-async def _transcribe_pcm_buffer(model, pcm_bytes: bytes, sample_rate: int = 16000):
-    """Transcribe raw PCM 16-bit mono buffer using Faster Whisper."""
-    if len(pcm_bytes) < 1000:
-        return ""
-
-    # Convert PCM to WAV in memory
-    wav_buf = io.BytesIO()
-    with wave.open(wav_buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # 16-bit
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm_bytes)
-    wav_buf.seek(0)
-
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
-        tmp.write(wav_buf.read())
-        tmp.flush()
-
-        loop = asyncio.get_event_loop()
-        segments_raw, info = await loop.run_in_executor(
-            None,
-            lambda: model.transcribe(
-                tmp.name,
-                beam_size=1,
-                language="en",
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=300),
-            ),
-        )
-        parts = []
-        for seg in segments_raw:
-            text = seg.text.strip()
-            if text:
-                parts.append(text)
-
-        return " ".join(parts)
+    finally:
+        try:
+            stream.stop()
+        except Exception:
+            pass
 
 
 # ============================================================================
@@ -803,5 +869,6 @@ async def health():
     return {
         "status": "ok",
         "timestamp": time.time(),
-        "stt_available": _whisper_model is not None,
+        "stt_available": _moonshine_transcriber is not None,
+        "vad_available": _silero_vad_model is not None,
     }
