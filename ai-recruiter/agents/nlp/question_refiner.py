@@ -36,7 +36,7 @@ os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
 class RefinerOutput:
     """Refined question with metadata."""
     refined_question: str
-    refinement_type: str  # "deepened", "specified", "rephrased", "maintained"
+    refinement_type: str  # "deepened", "specified", "rephrased", "maintained", "cleaned"
     improvements: str  # What was improved
     latency_ms: float
     
@@ -71,12 +71,56 @@ def _run_with_timeout(func, timeout_sec: int, error_msg: str = "Operation timed 
     return result_holder[0]
 
 
+# ---------------------------------------------------------------------------
+# Detection helpers — fast regex/keyword checks (no LLM needed)
+# ---------------------------------------------------------------------------
+
+# Phrases that indicate the LLM spoke *as* the candidate instead of the recruiter
+_CANDIDATE_VOICE_PATTERNS: list[re.Pattern] = [
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        r"^(?:during|in)\s+my\s+(?:time|work|internship|experience|role|project)",
+        r"^I\s+(?:worked|built|developed|implemented|designed|created|used|managed|led|handled|contributed)",
+        r"^(?:at|while at)\s+[A-Z]",  # "At TALAN…", "While at Google…"
+        r"^my\s+(?:role|responsibility|task|project|contribution|approach)",
+        r"^(?:we|our team)\s+(?:built|developed|implemented|used|designed|created)",
+        r"^I\s+(?:am|was)\s+(?:responsible|tasked|assigned)",
+        r"^as\s+(?:a|an|the)\s+(?:developer|engineer|intern|member|lead)",
+    ]
+]
+
+
+def _is_candidate_voice(text: str) -> bool:
+    """Return True if the text reads like the candidate answering, not the recruiter asking."""
+    stripped = text.strip()
+    return any(pat.search(stripped) for pat in _CANDIDATE_VOICE_PATTERNS)
+
+
+def _is_incomplete_question(text: str) -> bool:
+    """Return True if the text looks truncated or incomplete."""
+    stripped = text.strip()
+    if not stripped:
+        return True
+    # Too short to be a real question
+    if len(stripped) < 15:
+        return True
+    # Ends mid-word / mid-sentence (no sentence-ending punctuation)
+    if stripped[-1] not in ".?!":
+        return True
+    # Contains obvious truncation artefacts
+    if stripped.endswith("...") or stripped.endswith("…"):
+        return True
+    return False
+
+
 class QuestionRefiner:
     """
     Small LLM that refines interview questions on CPU.
     
     Takes a generated question and scorer analysis, then:
-    - Makes it deeper and more probing
+    - Detects and cleans responses where the LLM speaks as the candidate
+    - Fixes incomplete / truncated questions
+    - Makes questions deeper and more probing
     - Ensures specificity (references CV items)
     - Maintains warm, professional tone
     - Removes generic phrasing
@@ -107,7 +151,7 @@ Make it sound like a real person talking — warm, curious, specific. Keep the s
 7. NEVER write as the candidate. You are outputting the RECRUITER's question.
 8. NEVER use placeholder brackets like [specific language] or [topic]. Use concrete words only.
 9. Output must end with exactly one "?"
-10. Output must be under 200 characters.
+10. Output must be under 350 characters.
 11. Sound like a curious colleague, not a script-reader.
 
 ## Good Examples:
@@ -126,9 +170,52 @@ Make it sound like a real person talking — warm, curious, specific. Keep the s
 
 Respond with ONLY valid JSON:
 {{
-    "refined_question": "the polished question (MUST end with ? and be under 200 chars)",
+    "refined_question": "the polished question (MUST end with ? and be under 350 chars)",
     "refinement_type": "<pick ONE: deepened OR specified OR rephrased OR maintained>",
     "improvements": "what changed OR 'none'"
+}}
+
+JSON response:"""
+
+    # ------------------------------------------------------------------
+    # Cleaner prompt — used when the LLM answered as the candidate or
+    # produced an incomplete / broken question.  The goal here is NOT to
+    # deepen the question but to *replace* the bad output with a proper
+    # recruiter question on the same topic.
+    # ------------------------------------------------------------------
+
+    CLEANER_PROMPT = """The main interview LLM produced a BAD output. Your job is to REPLACE it with a proper recruiter question.
+
+## What went wrong:
+{issue_description}
+
+## Bad output from main LLM:
+\"{bad_output}\"
+
+## Context:
+CV Topic: {cv_topic}
+Knowledge Level: {knowledge_level}
+Acknowledgment hint: {acknowledgment}
+
+## Your Task:
+Write a SHORT, warm recruiter question about the **same CV topic**.
+- You are the RECRUITER (Alex). You are asking the CANDIDATE a question.
+- NEVER write as the candidate. NEVER start with "I worked…", "During my…", etc.
+- Keep the same topic / subject area from the bad output.
+- Sound like a curious colleague, not a script-reader.
+- End with exactly one "?"
+- Under 350 characters.
+
+## Good recruiter questions:
+- "So you used Neo4j for the graph layer — how did query performance hold up at scale?"
+- "SAM for boundary detection, nice. What was the trickiest part of that pipeline?"
+- "That's a big migration. What surprised you most about moving to microservices?"
+
+Respond with ONLY valid JSON:
+{{
+    "refined_question": "the recruiter question (MUST end with ? and be under 350 chars)",
+    "refinement_type": "cleaned",
+    "improvements": "<what was wrong and how you fixed it>"
 }}
 
 JSON response:"""
@@ -166,7 +253,6 @@ JSON response:"""
             try:
                 from transformers import AutoModelForCausalLM, AutoTokenizer
                 import torch
-                
                 def _load():
                     tokenizer = AutoTokenizer.from_pretrained(
                         self._model_name,
@@ -185,7 +271,7 @@ JSON response:"""
                     _load,
                     self._load_timeout,
                     f"Refiner model loading timed out after {self._load_timeout}s"
-                )
+                ) 
                 
                 # Create thread pool for async inference
                 from concurrent.futures import ThreadPoolExecutor
@@ -242,19 +328,49 @@ JSON response:"""
                 improvements="refiner_unavailable",
                 latency_ms=0.0,
             )
+
+        # ----- Fast pre-checks: candidate-voice or incomplete -----
+        needs_cleaning = False
+        issue_description = ""
+
+        if _is_candidate_voice(original_question):
+            needs_cleaning = True
+            issue_description = (
+                "The LLM responded AS THE CANDIDATE instead of as the recruiter. "
+                "The output starts with the candidate talking about their own experience."
+            )
+            print(f"[refiner] Detected candidate-voice output, routing to cleaner")
+
+        elif _is_incomplete_question(original_question):
+            needs_cleaning = True
+            issue_description = (
+                "The LLM produced an INCOMPLETE or TRUNCATED question. "
+                "The output is cut off or too short to be a real question."
+            )
+            print(f"[refiner] Detected incomplete question, routing to cleaner")
         
         try:
             t0 = time.perf_counter()
-            
-            # Build prompt
-            prompt = self.REFINER_PROMPT.format(
-                cv_topic=cv_topic,
-                knowledge_level=knowledge_level,
-                response_quality=response_quality,
-                question_focus=question_focus or "technical depth",
-                acknowledgment=acknowledgment or "(none - start directly)",
-                original_question=original_question,
-            )
+
+            # Choose prompt based on whether we need cleaning or refinement
+            if needs_cleaning:
+                prompt = self.CLEANER_PROMPT.format(
+                    issue_description=issue_description,
+                    bad_output=original_question,
+                    cv_topic=cv_topic,
+                    knowledge_level=knowledge_level,
+                    acknowledgment=acknowledgment or "(none)",
+                )
+            else:
+                # Normal refinement path
+                prompt = self.REFINER_PROMPT.format(
+                    cv_topic=cv_topic,
+                    knowledge_level=knowledge_level,
+                    response_quality=response_quality,
+                    question_focus=question_focus or "technical depth",
+                    acknowledgment=acknowledgment or "(none - start directly)",
+                    original_question=original_question,
+                )
             
             # Run inference in thread pool with timeout
             loop = asyncio.get_event_loop()
@@ -279,7 +395,9 @@ JSON response:"""
                 
                 # Validation: must be non-empty, end with ?, be reasonable length, and not contain brackets
                 has_brackets = bool(re.search(r"\[(?!http)[^\]]+\]", refined))
-                if refined and refined.endswith("?") and 10 < len(refined) < 200 and not has_brackets:
+                still_candidate_voice = needs_cleaning and _is_candidate_voice(refined)
+                if (refined and refined.endswith("?") and 10 < len(refined) < 350
+                        and not has_brackets and not still_candidate_voice):
                     # IMPORTANT: Prepend acknowledgment if provided and not already present
                     if acknowledgment and acknowledgment.strip():
                         ack = acknowledgment.strip()
@@ -341,7 +459,7 @@ JSON response:"""
         with torch.no_grad():
             outputs = self._model.generate(
                 **inputs,
-                max_new_tokens=200,  # Increased from 150 for longer responses
+                max_new_tokens=300,
                 temperature=0.7,
                 top_p=0.9,
                 do_sample=True,

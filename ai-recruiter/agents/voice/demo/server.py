@@ -146,7 +146,7 @@ async def startup():
         from agent import NLPAgent
         _nlp_agent = NLPAgent(
             model_path="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
-            enable_scorer=False,
+            enable_scorer=True,
             scorer_model="Qwen/Qwen2.5-1.5B-Instruct",
             enable_refiner=True,
             refiner_model="Qwen/Qwen2.5-1.5B-Instruct",
@@ -175,7 +175,6 @@ async def startup():
     except Exception as e:
         logger.error("[2/3] Avatar agent failed: %s", e, exc_info=True)
         raise
-
     # --- Load Moonshine STT + Silero VAD ---
     logger.info("[3/3] Loading Moonshine STT + Silero VAD...")
     try:
@@ -185,20 +184,17 @@ async def startup():
             TranscriptEventListener,
             get_model_for_language,
         )
-
         # Download / locate Moonshine English model
         _moonshine_model_path, _moonshine_model_arch = get_model_for_language("en")
         logger.info(
             "[3/3] Moonshine model path=%s arch=%s",
             _moonshine_model_path, _moonshine_model_arch,
         )
-
         # Create global Transcriber (model loaded once, shared across streams)
         _moonshine_transcriber = Transcriber(
             model_path=_moonshine_model_path,
             model_arch=_moonshine_model_arch,
         )
-
         # Warmup with 1 s silence
         silence = np.zeros(16000, dtype=np.float32).tolist()
         _moonshine_transcriber.transcribe_without_streaming(silence, 16000)

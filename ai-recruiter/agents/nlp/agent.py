@@ -158,7 +158,7 @@ Instead of robotic "Got it." or "I see.", use natural reactions like:
 7. NEVER end the interview or say goodbye. Keep asking questions.
 8. NEVER ask about topics NOT on the CV. Only ask about what they actually worked on.
 9. ONE question only. Not two, not three. One.
-10. Max ~40 words total.
+10. Max ~80 words total.
 
 ## What to AVOID:
 - Topics NOT mentioned in the CV — stick to what they actually worked on
@@ -173,7 +173,7 @@ Instead of robotic "Got it." or "I see.", use natural reactions like:
 ## Format:
 - 1-2 sentences: natural acknowledgment + smooth transition
 - Then ONE focused question ending with "?"
-- Max ~40 words total. Be concise.
+- Max ~80 words total. Be concise.
 
 ## Topics from their CV to explore:
 {tl}
@@ -377,12 +377,12 @@ class NLPAgent:
     async def generate_question(
         self,
         request: QuestionGenerationRequest,
-        max_tokens: int = 72,
-        temperature: float = 0.7,
+        max_tokens: int = 240,
+        temperature: float = 0.2,
         top_p: float = 0.9,
         repetition_penalty: float = 1.15,
-        history_window: int = 6,
-        max_retries: int = 2,
+        history_window: int = 20,
+        max_retries: int = 3,
         synthesize_audio: bool = True,
     ) -> QuestionGenerationResponse:
 
@@ -552,7 +552,7 @@ class NLPAgent:
     async def generate_question_streaming(
         self,
         request: QuestionGenerationRequest,
-        max_tokens: int = 72,
+        max_tokens: int = 128,
         temperature: float = 0.7,
         top_p: float = 0.9,
         repetition_penalty: float = 1.15,
@@ -609,7 +609,7 @@ class NLPAgent:
     async def generate_question_streaming_with_audio(
         self,
         request: QuestionGenerationRequest,
-        max_tokens: int = 72,
+        max_tokens: int = 128,
         temperature: float = 0.7,
         top_p: float = 0.9,
         repetition_penalty: float = 1.15,
