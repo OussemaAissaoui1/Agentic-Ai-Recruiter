@@ -1,0 +1,55 @@
+# Unified AI Recruiter runtime configuration.
+#
+# Override per-environment via env vars:
+#   AIR_HOST, AIR_PORT, AIR_LOG_LEVEL, AIR_GPU_VLLM_FRACTION,
+#   HF_TOKEN (required for matching extract-signals LLM).
+#
+# All paths are resolved relative to the ai-recruiter/ directory.
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  log_level: INFO
+  cors_origins: ["*"]            # tighten in production
+
+gpu_policy:
+  vllm_mem_fraction: 0.55        # leaves 30-40% for vision (mediapipe + wav2vec2)
+  prefer_gpu_for: ["nlp", "vision_visual_mlp", "matching_gnn"]
+  prefer_cpu_for: ["nlp_scorer", "nlp_refiner", "nlp_tts", "matching_lda"]
+
+agents:
+  startup_order:
+    - matching        # cheap, only loads MiniLM + ckpts on first request
+    - avatar          # cheap (GLB + viseme engine)
+    - vision          # mediapipe loads here (small)
+    - voice           # ASR/prosody only — stub today
+    - scoring
+    - orchestrator
+    - nlp             # last; vLLM stays lazy until /api/nlp/warmup
+
+paths:
+  matching_artifacts: "agents/matching/artifacts"
+  vision_models: "agents/vision/models"
+  vision_weights: "agents/vision/weights"
+  vision_reports: "artifacts/vision/reports"
+  scoring_dir: "artifacts/scoring"
+  uploads: "artifacts/uploads"
+  nlp_model_cache: "model_cache"
+
+vision:
+  enable_video: true
+  enable_audio: true                  # uses Wav2Vec2; StudentNet head is fallback
+  use_body_pose: true
+  enable_hands: true
+  calibration_duration: 45
+
+matching:
+  fallback_chain: ["gnn", "tapjfnn", "cosine"]
+  llm_model: "meta-llama/Llama-3.2-3B-Instruct"
+
+nlp:
+  model_path: "model_cache"
+  enable_scorer: true
+  enable_refiner: true
+  enable_tts: true
+  tts_voice: "af_heart"

@@ -1,35 +1,27 @@
 # Avatar Agent
 
-Synthetic interviewer generation for visual and audio representation.
+Serves the 3D recruiter avatar (Ready Player Me GLB) and extracts
+viseme timelines from TTS audio for browser-side lip sync.
 
-## Purpose
+## Routes (`/api/avatar`)
 
-- Generate realistic talking head video of interviewer (Alex)
-- Text-to-speech synthesis with natural prosody
-- Lip sync synchronization with generated audio
-- Adaptive facial expressions based on interview context
-- Emotion-responsive avatar behavior
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`  | `/health` | Readiness + GLB size |
+| `GET`  | `/glb`    | Returns the GLB binary (cached 24 h) |
+| `POST` | `/visemes` | `{ wav_b64 }` → viseme timeline (list of frames) |
 
-## Key Components
+## A2A capabilities
 
-| File | Purpose |
-|------|---------|
-| `agent.py` | Main Avatar agent with A2A task handler |
-| `tts_engine.py` | Text-to-speech synthesis |
-| `lip_sync.py` | Audio-to-lip-sync generation |
-| `face_generator.py` | Talking head video synthesis |
-| `expression_controller.py` | Facial expression adaptation |
-| `avatar_renderer.py` | Final video composition and streaming |
-| `agent_card.json` | A2A discovery metadata |
+`get_glb`, `extract_visemes`.
 
-## Models Used
+## Files
 
-- TTS: XTTS / Coqui TTS / ElevenLabs
-- Lip Sync: Wav2Lip / SadTalker
-- Face Generation: First Order Motion Model
+- `brunette.glb` — checked-in avatar model.
+- `viseme_engine.py` — spectral analysis → ARKit-compatible visemes.
 
-## Data Flows
+## Used by
 
-- **Input from NLP**: Generated question text for TTS + lip sync
-- **Input from Vision**: Emotion signals to adapt avatar expressions
-- **Output**: Video/audio stream to client
+The interview frontend renders the GLB with Three.js and consumes the
+viseme timeline produced from each TTS chunk to drive blend-shape lip
+sync. Avatar runs alongside (not instead of) the audio playback.

@@ -1,31 +1,34 @@
 {
-    "name": "nlp-agent",
-    "description": "Handles interview conversation, question generation, and semantic analysis using the fine-tuned recruiter persona model (Alex)",
-    "version": "1.0.0",
-    "protocol": "a2a/1.0",
-    "capabilities": [
-        "question_generation",
-        "response_analysis",
-        "communication_scoring"
-    ],
-    "endpoint": "http://nlp-agent:8080",
-    "tasks": [
-        {
-            "name": "generate_question",
-            "description": "Generate the next interview question based on context",
-            "input_schema": {
-                "job_role": "string",
-                "conversation_history": "array",
-                "phase": "string"
-            }
-        },
-        {
-            "name": "analyze_response",
-            "description": "Analyze candidate response for semantic content",
-            "input_schema": {
-                "response_text": "string",
-                "question_context": "string"
-            }
-        }
-    ]
+  "name": "nlp",
+  "version": "0.2.0",
+  "description": "Recruiter persona (Alex). vLLM Llama-3.1-8B fine-tune (recruiter-persona-merged-v2) + Qwen2.5-1.5B response scorer + Qwen2.5-1.5B question refiner + Kokoro TTS, with sentence-level streaming audio.",
+  "transports": ["http"],
+  "routes": [
+    "/api/nlp/health",
+    "/api/nlp/warmup",
+    "/api/nlp/session",
+    "/api/nlp/chat",
+    "/api/nlp/stream",
+    "/api/nlp/tts"
+  ],
+  "capabilities": [
+    {
+      "name": "generate_question",
+      "description": "Produce the next interview question. Decides follow-up vs new topic, refines for depth/specificity, returns text + WAV audio.",
+      "input_schema": {"type": "object", "required": ["session_id", "candidate_cv", "candidate_latest_answer"]},
+      "output_schema": {"type": "object", "required": ["question", "reasoning"]}
+    },
+    {
+      "name": "analyze_response",
+      "description": "Lightweight depth/quality analysis of a candidate answer.",
+      "input_schema": {"type": "object", "required": ["session_id", "answer"]},
+      "output_schema": {"type": "object"}
+    },
+    {
+      "name": "reset_session",
+      "description": "Reset state for a session_id.",
+      "input_schema": {"type": "object", "required": ["session_id"]},
+      "output_schema": {"type": "object"}
+    }
+  ]
 }

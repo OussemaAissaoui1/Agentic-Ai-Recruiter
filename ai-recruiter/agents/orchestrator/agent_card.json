@@ -1,0 +1,15 @@
+{
+  "name": "orchestrator",
+  "version": "0.2.0",
+  "description": "Central A2A dispatcher. Today routes A2ATask envelopes to in-process agents; will host the LangGraph interview-flow state machine in a future phase.",
+  "transports": ["http"],
+  "routes": [
+    "/api/orchestrator/health",
+    "/api/orchestrator/dispatch",
+    "/api/orchestrator/agents"
+  ],
+  "capabilities": [
+    {"name": "dispatch", "description": "Route an A2ATask to its target agent."},
+    {"name": "list_agents", "description": "Return registered agent names."}
+  ]
+}

@@ -137,4 +137,5 @@ expected_metrics:
   initial_loss: 2.0-2.5
   final_train_loss: 0.4-0.9
   final_eval_loss: 0.5-1.0
-  total_steps: 900  
+  total_steps: 900
+ 

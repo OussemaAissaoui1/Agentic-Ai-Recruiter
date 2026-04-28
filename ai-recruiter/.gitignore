@@ -26,16 +26,10 @@ ENV/
 .env.*.local
 
 # ML Artifacts (large files)
-*.pt
-*.pth
-*.bin
-*.safetensors
-*.gguf
 models/recruiter-persona/adapters/*/
 models/recruiter-persona/merged/
 
 # Data (large files - keep structure, ignore content)
-data/raw/**/*.csv
 data/interim/
 !data/interim/README.md
 
@@ -61,3 +55,10 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend build outputs / sub-app deps
+apps/static/*/
+!apps/static/.gitkeep
+**/node_modules/
+**/dist/
+

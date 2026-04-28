@@ -1,33 +1,6 @@
-# Scripts
+# scripts/
 
-Operational scripts for development, data processing, and releases.
+Operational scripts used by the unified app.
 
-## Categories
-
-| Script | Purpose |
-|--------|---------|
-| `data/` | Data processing scripts |
-| `setup.sh` | Development environment setup |
-| `run_agents.sh` | Start all agents locally |
-
-## Key Scripts
-
-### Data Processing
-
-```bash
-# Process recruiter interview data
-python scripts/data/process_recruiter_data.py
-
-# Generate data report
-python scripts/data/generate_report.py
-```
-
-### Development
-
-```bash
-# Setup development environment
-./scripts/setup.sh
-
-# Run all agents locally
-./scripts/run_agents.sh
-```
+- `build_frontends.sh` — `npm ci && npm run build` for the three Vite
+  sub-apps; outputs land in `apps/static/<name>/`.
