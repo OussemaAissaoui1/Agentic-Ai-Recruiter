@@ -1,32 +1,36 @@
-# Agents Directory
+# agents/ — multi-agent runtime
 
-Contains all AI agents that power the interview system. Each agent is a self-contained module with its own lifecycle, tools, and communication interface.
+Every subdirectory is an independently deployable agent that conforms to
+`core.contracts.BaseAgent`. The unified app at `ai-recruiter/main.py`
+imports each one, registers it with the in-process `AgentRegistry`, and
+mounts its router under `/api/<name>`.
 
-## Agent Types
+| Agent | Status | What it does | Mount |
+|---|---|---|---|
+| `matching/` | ready | CV ↔ JD ranker (TAPJFNN+GNN+CAGA) | `/api/matching` |
+| `nlp/` | ready | Recruiter persona (vLLM Llama-3.1-8B + Qwen scorer/refiner + Kokoro TTS) | `/api/nlp` |
+| `vision/` | fallback | Multimodal behavioral analysis (MediaPipe + HSEmotion + Wav2Vec2) | `/api/vision` + `/ws/vision` |
+| `avatar/` | ready | GLB avatar + viseme extraction | `/api/avatar` |
+| `scoring/` | ready (stub) | Per-modality score JSONL | `/api/scoring` |
+| `voice/` | stub | ASR + prosody (planned) | `/api/voice` |
+| `orchestrator/` | ready (stub) | A2A dispatcher | `/api/orchestrator` |
 
-| Agent | Purpose | Protocol |
-|-------|---------|----------|
-| `orchestrator/` | Central state machine coordinating all agents | A2A dispatch |
-| `nlp/` | Conversation, question generation, semantic scoring | A2A + Pub/Sub |
-| `vision/` | Facial expression and emotion analysis | A2A + Pub/Sub |
-| `voice/` | ASR transcription, prosody and stress analysis | A2A + Pub/Sub |
-| `avatar/` | Synthetic interviewer face/voice generation | A2A + Pub/Sub |
-| `scoring/` | Global candidate evaluation engine | A2A + Pub/Sub |
-| `common/` | Shared agent utilities, base classes, decorators | Internal |
+`vision` is in fallback because StudentNet has not been trained yet
+(audio uses untrained head). `voice` is intentionally a stub — the
+multimodal vocal-stress signal is owned by `vision`.
 
-## Inter-Agent Data Flows
+## Required surface per agent
 
 ```
-Voice Agent  ──transcript──>  NLP Agent  ──generated text──>  Avatar Agent
-Vision Agent ──emotion signals──────────────────────────────>  Avatar Agent
-NLP Agent    ──semantic scores──>  Scoring Agent
-Vision Agent ──behavioral scores──>  Scoring Agent
-Voice Agent  ──prosody scores──>  Scoring Agent
+agents/<name>/
+├── agent.py               # contains a class implementing BaseAgent
+├── api.py                 # build_router(agent) -> APIRouter   (when needed)
+├── agent_card.json        # discovery — exposed at /.well-known/agents/<name>
+├── README.md              # what it does, contract, fallback modes
+└── …                      # implementation files (models/, weights/, …)
 ```
 
-## Agent Contract
-
-Each agent MUST implement:
-1. `agent_card.json` - A2A discovery metadata
-2. `handle_task()` - Process incoming A2A tasks
-3. `health_check()` - Liveness/readiness probes
+Cross-agent communication uses `A2ATask` envelopes (see
+`core/contracts/a2a.py`). Routes are HTTP and stable; bypassing them
+is fine for in-process speed but `handle_task()` is the canonical path
+that the orchestrator (today and future) uses.

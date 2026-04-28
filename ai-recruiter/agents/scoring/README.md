@@ -1,38 +1,30 @@
 # Scoring Agent
 
-Global candidate evaluation and interview assessment engine.
+Collects per-modality scores into per-session JSONL, exposes a small
+REST surface for posting / reading them. Stub today; final aggregation
+returns 501.
 
-## Purpose
+## Routes (`/api/scoring`)
 
-- Aggregate scores from all specialized agents
-- Apply weighted scoring models
-- Generate interview reports and recommendations
-- Track candidate performance across competencies
-- Produce final hiring decision support
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`  | `/health` | Readiness |
+| `POST` | `/{session_id}/score` | Append `{source, kind, value, payload}` |
+| `GET`  | `/{session_id}/scores` | Return all records |
+| `POST` | `/{session_id}/final` | 501 — not implemented |
 
-## Key Components
+## A2A capabilities
 
-| File | Purpose |
-|------|---------|
-| `agent.py` | Main Scoring agent with A2A task handler |
-| `score_aggregator.py` | Multi-signal score aggregation |
-| `competency_mapper.py` | Map signals to job competencies |
-| `weighting_engine.py` | Role-specific scoring weights |
-| `report_generator.py` | Interview report generation |
-| `recommendation_engine.py` | Hiring recommendation logic |
-| `agent_card.json` | A2A discovery metadata |
+`record_score`, `get_scores`, `compute_final` (501).
 
-## Scoring Dimensions
+## Storage
 
-| Source | Metrics |
-|--------|---------|
-| NLP Agent | Semantic relevance, communication clarity, depth of answers |
-| Vision Agent | Confidence, engagement, emotional stability |
-| Voice Agent | Vocal confidence, stress levels, speaking pace |
+Append-only JSONL at `artifacts/scoring/<session_id>.jsonl`. One line
+per record, `{ts, source, kind, value, payload}`.
 
-## Data Flows
+## Future
 
-- **Input from NLP**: Semantic and communication scores
-- **Input from Vision**: Behavioral and emotion scores
-- **Input from Voice**: Prosody and stress scores
-- **Output**: Final evaluation report, recommendation
+- Weighted aggregation across NLP / vision / voice → final hiring
+  recommendation.
+- Per-job-role weight presets.
+- Cross-session calibration to remove rater drift.

@@ -1,0 +1,49 @@
+{
+  "name": "matching",
+  "version": "0.2.0",
+  "description": "Pre-interview CV ↔ JD ranker. MiniLM encoder → TAPJFNN hierarchical attention → 14-node bipartite GNN → fit score; optional Constraint-Aware GA shortlist (CAGA) and LLM signal extraction for GA inputs.",
+  "transports": ["http"],
+  "routes": [
+    "/api/matching/health",
+    "/api/matching/rank",
+    "/api/matching/extract-signals"
+  ],
+  "capabilities": [
+    {
+      "name": "rank",
+      "description": "Rank a batch of CVs against a single JD. Falls back from GNN → TAPJFNN → cosine if checkpoints are missing.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "job_description": {"type": "string"},
+          "resumes": {
+            "type": "array",
+            "items": {"type": "object", "properties": {"id": {"type": "string"}, "text": {"type": "string"}}}
+          }
+        },
+        "required": ["job_description", "resumes"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "ranked": {
+            "type": "array",
+            "items": {"type": "object", "properties": {"id": {"type": "string"}, "fit_score": {"type": "number"}}}
+          }
+        }
+      }
+    },
+    {
+      "name": "extract_signals",
+      "description": "LLM-extract per-CV hiring signals (cost, gender_female, cultural_fit, experience_score, salary_alignment) used as inputs to the GA shortlist.",
+      "input_schema": {"type": "object", "required": ["job_description", "resumes"]},
+      "output_schema": {"type": "object"}
+    },
+    {
+      "name": "apply_ga",
+      "description": "Run the constraint-aware GA on a ranked list with budget / diversity / role / min-fit constraints.",
+      "input_schema": {"type": "object", "required": ["ranked", "ga_inputs", "constraints"]},
+      "output_schema": {"type": "object", "properties": {"selected_ids": {"type": "array"}}}
+    }
+  ]
+}

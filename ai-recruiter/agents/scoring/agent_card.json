@@ -1,0 +1,16 @@
+{
+  "name": "scoring",
+  "version": "0.2.0",
+  "description": "Collects per-modality scores from NLP / vision / voice and persists them to per-session JSONL. Final aggregation is intentionally stubbed (501).",
+  "transports": ["http"],
+  "routes": [
+    "/api/scoring/health",
+    "/api/scoring/{session_id}/score",
+    "/api/scoring/{session_id}/scores"
+  ],
+  "capabilities": [
+    {"name": "record_score", "description": "Append a score record."},
+    {"name": "get_scores", "description": "Return all recorded scores for a session."},
+    {"name": "compute_final", "description": "501 — not implemented."}
+  ]
+}

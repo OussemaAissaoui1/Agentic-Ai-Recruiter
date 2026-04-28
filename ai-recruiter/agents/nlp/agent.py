@@ -29,11 +29,27 @@ import threading
 from typing import List, Tuple, Optional, Dict, Any, AsyncGenerator
 from dataclasses import dataclass
 
-from vllm_engine import VLLMRecruiterEngine, GenerationMetrics, check_gpu_status, cleanup_gpu_processes
-from interview_state import InterviewStateTracker, AnswerAnalysis
-from response_scorer import ResponseScorer, ScorerOutput
-from question_refiner import QuestionRefiner, RefinerOutput
-from tts_engine import TTSEngine, TTSResult, StreamingTTSResult
+# Use package-relative imports when imported as agents.nlp.agent (unified app),
+# bare-name imports when run as a script from the demo directory. We branch on
+# __package__ instead of try/except so downstream ImportErrors (e.g. numpy ABI
+# crashes in transformers) bubble up with their real traceback rather than
+# being misreported as "module not found".
+if __package__:
+    from .vllm_engine import (
+        VLLMRecruiterEngine, GenerationMetrics, check_gpu_status, cleanup_gpu_processes,
+    )
+    from .interview_state import InterviewStateTracker, AnswerAnalysis
+    from .response_scorer import ResponseScorer, ScorerOutput
+    from .question_refiner import QuestionRefiner, RefinerOutput
+    from .tts_engine import TTSEngine, TTSResult, StreamingTTSResult
+else:
+    from vllm_engine import (  # type: ignore
+        VLLMRecruiterEngine, GenerationMetrics, check_gpu_status, cleanup_gpu_processes,
+    )
+    from interview_state import InterviewStateTracker, AnswerAnalysis  # type: ignore
+    from response_scorer import ResponseScorer, ScorerOutput  # type: ignore
+    from question_refiner import QuestionRefiner, RefinerOutput  # type: ignore
+    from tts_engine import TTSEngine, TTSResult, StreamingTTSResult  # type: ignore
 
 # Module-level lock for agent engine initialization
 _AGENT_ENGINE_LOCK = threading.Lock()
