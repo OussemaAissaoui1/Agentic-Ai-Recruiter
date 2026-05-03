@@ -165,16 +165,27 @@ Instead of robotic "Got it." or "I see.", use natural reactions like:
 - Reference something SPECIFIC from their answer, not generic filler.
 
 ## ABSOLUTE RULES — NEVER BREAK THESE:
-1. Output ONLY the words you would speak out loud. Nothing else.
-2. NEVER write meta-commentary like "Here's how I'd respond:", "Here's my response:", "I would say:"
-3. NEVER write stage directions like [Looks concerned], [Pauses], [Smiles], [Try to...]
-4. NEVER write internal notes like "Post-interview notes", "Assessment:", "Evaluation:"
-5. NEVER write "The candidate...", "Based on this conversation..."
-6. NEVER write placeholder brackets like [specific language], [topic], [project name]
-7. NEVER end the interview or say goodbye. Keep asking questions.
-8. NEVER ask about topics NOT on the CV. Only ask about what they actually worked on.
-9. ONE question only. Not two, not three. One.
-10. Max ~80 words total.
+1. Output ONLY the next thing Alex says out loud, in first person. One short turn. Nothing else.
+2. NEVER simulate a transcript. NEVER roleplay both sides. NEVER write the candidate's reply. NEVER write lines like "Candidate:", "Chedly:", "Alex:", "Interviewer:", "Me:", or any speaker label.
+3. NEVER write a narration, summary, framing or preamble like "This transcript simulates...", "The following is an interview between...", "In this conversation...", "Below is...".
+4. NEVER use markdown headers, bold titles, or section dividers (no **Interview Transcript**, no ##, no --- lines, no bullet lists, no numbered lists). Output is plain conversational prose only.
+5. NEVER write meta-commentary like "Here's how I'd respond:", "Here's my response:", "I would say:".
+6. NEVER write stage directions like [Looks concerned], [Pauses], [Smiles], (warmly), *nods*.
+7. NEVER write internal notes like "Post-interview notes", "Assessment:", "Evaluation:", "Score:".
+8. NEVER write "The candidate...", "Based on this conversation...", or any third-person reference to the candidate. Always speak directly to them in second person ("you", "your").
+9. NEVER write placeholder brackets like [specific language], [topic], [project name].
+10. NEVER end the interview or say goodbye. NEVER say "thanks for coming in", "final question", "to wrap up", "that's all". Keep asking questions.
+11. NEVER ask about topics NOT on the CV. Only ask about what they actually worked on.
+12. ONE question only per turn. Not two, not three. One.
+13. Max ~30 words total. Aim for 1–2 short conversational sentences. Be tight.
+
+## OUTPUT SHAPE — exactly one of these forms, no decoration:
+✓ "Oh nice, vector search at that scale is tricky. How did you handle the latency budget on the retrieval side?"
+✓ "Interesting choice using SAM there. What made you go with that over a more classical segmentation pipeline?"
+✗ "**Interview Transcript**\n\nAlex: Hi Chedly, thanks for coming in..."   ← forbidden, you are simulating the whole interview
+✗ "This transcript simulates an interview..."                                ← forbidden, narration
+✗ "Alex: That's cool. How did you..."                                        ← forbidden, speaker label
+✗ "Here's my response: That's a great answer..."                             ← forbidden, meta
 
 ## What to AVOID:
 - Topics NOT mentioned in the CV — stick to what they actually worked on
@@ -189,7 +200,7 @@ Instead of robotic "Got it." or "I see.", use natural reactions like:
 ## Format:
 - 1-2 sentences: natural acknowledgment + smooth transition
 - Then ONE focused question ending with "?"
-- Max ~80 words total. Be concise.
+- Max ~30 words total. Be tight and conversational.
 
 ## Topics from their CV to explore:
 {tl}
@@ -208,7 +219,7 @@ class NLPAgent:
         self,
         model_path: str = "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
         dtype: str = "bfloat16",
-        max_model_len: int = 2048,
+        max_model_len: int = 8192,
         gpu_memory_utilization: float = 0.60,
         tensor_parallel_size: int = 0,
         use_compact_prompt: bool = False,
@@ -393,7 +404,7 @@ class NLPAgent:
     async def generate_question(
         self,
         request: QuestionGenerationRequest,
-        max_tokens: int = 240,
+        max_tokens: int = 48,
         temperature: float = 0.2,
         top_p: float = 0.9,
         repetition_penalty: float = 1.15,
@@ -568,7 +579,7 @@ class NLPAgent:
     async def generate_question_streaming(
         self,
         request: QuestionGenerationRequest,
-        max_tokens: int = 128,
+        max_tokens: int = 48,
         temperature: float = 0.7,
         top_p: float = 0.9,
         repetition_penalty: float = 1.15,
@@ -591,7 +602,15 @@ class NLPAgent:
         should_follow, reason = state.should_follow_up(analysis)
         instruction = state.get_instruction(should_follow, reason, analysis)
 
+        # Same head-window gate as generate_question_streaming_with_audio:
+        # buffer until classification, then either flush head + passthrough or
+        # hold silently and emit the cleaned single chunk at end.
         streamed_chunks: List[str] = []
+        head_buf: List[str] = []
+        classified = False
+        is_leak = False
+        HEAD_DECIDE_CHARS = 50
+
         async for token in self.engine.generate_streaming(
             system_prompt=sys_prompt,
             history=request.conversation_history,
@@ -604,9 +623,25 @@ class NLPAgent:
             history_window=history_window,
         ):
             streamed_chunks.append(token)
+            if not classified:
+                head_buf.append(token)
+                joined = "".join(head_buf)
+                if len(joined.strip()) >= HEAD_DECIDE_CHARS or self.engine.looks_like_leak_head(joined):
+                    is_leak = self.engine.looks_like_leak_head(joined)
+                    classified = True
+                    if not is_leak:
+                        yield joined
+                continue
+            if is_leak:
+                continue
             yield token
 
         final_question = self.engine._clean_response("".join(streamed_chunks))
+        # If the stream was held silently (leak mode) or ended pre-classification,
+        # emit the cleaned text now as a single delta so the caller sees something.
+        if not classified or is_leak:
+            if final_question:
+                yield final_question
         if (
             not final_question or len(final_question.strip()) < 10
             or self.engine.is_termination_attempt(final_question)
@@ -625,7 +660,7 @@ class NLPAgent:
     async def generate_question_streaming_with_audio(
         self,
         request: QuestionGenerationRequest,
-        max_tokens: int = 128,
+        max_tokens: int = 48,
         temperature: float = 0.7,
         top_p: float = 0.9,
         repetition_penalty: float = 1.15,
@@ -716,19 +751,41 @@ class NLPAgent:
         else:
             print(f"   • Instruction: (none — opening turn)")
 
-        # We need to tee the token stream:
-        #   - One side feeds synthesize_streaming() for TTS
-        #   - The other side is yielded as text deltas to the caller
-        # We use a queue to bridge the async generator into synthesize_streaming.
+        # We tee the model output to two sinks: the SSE display (`all_tokens`)
+        # and the TTS pipeline (`token_queue`). Both consume the SAME stream so
+        # we sanitize once at the source.
+        #
+        # The producer runs a small head-window classifier: it buffers tokens
+        # silently until it has enough text to decide whether the model is
+        # behaving (clean conversational reply) or has slipped into transcript
+        # roleplay / narration mode. On clean, the head buffer is flushed and
+        # subsequent tokens passthrough live. On leak, no tokens are forwarded
+        # at all — the producer collects the full output, runs `_clean_response`
+        # once generation finishes, and emits the recovered first-utterance as
+        # a single chunk to both sinks.
+        #
+        # Net effect: the user never sees or hears `**Interview Transcript**`,
+        # `Alex:`, narration paragraphs, or candidate-side simulated lines.
 
         token_queue: asyncio.Queue = asyncio.Queue()
         all_tokens: List[str] = []
+        raw_tokens_for_state: List[str] = []  # untouched buffer for record_question
 
-        # Sentinel to signal end of token stream to the TTS consumer
         _END = object()
+        HEAD_DECIDE_CHARS = 50  # buffer this much before classifying
 
         async def _token_producer() -> None:
-            """Pull tokens from vLLM and put them in the queue."""
+            head_buf: List[str] = []
+            classified = False
+            is_leak = False
+
+            def _emit_clean(text: str) -> None:
+                if not text:
+                    return
+                all_tokens.append(text)
+                # token_queue feeds TTS; can't await here in a sync helper,
+                # caller must do it.
+
             try:
                 async for token in self.engine.generate_streaming(
                     system_prompt=sys_prompt,
@@ -741,9 +798,52 @@ class NLPAgent:
                     repetition_penalty=repetition_penalty,
                     history_window=history_window,
                 ):
+                    raw_tokens_for_state.append(token)
+
+                    if not classified:
+                        head_buf.append(token)
+                        joined = "".join(head_buf)
+                        # Decide as soon as we have enough text or hit a clear
+                        # leak marker mid-buffer.
+                        ready = (
+                            len(joined.strip()) >= HEAD_DECIDE_CHARS
+                            or self.engine.looks_like_leak_head(joined)
+                        )
+                        if not ready:
+                            continue
+                        is_leak = self.engine.looks_like_leak_head(joined)
+                        classified = True
+                        if not is_leak:
+                            # Flush head verbatim; subsequent tokens passthrough.
+                            all_tokens.append(joined)
+                            await token_queue.put(joined)
+                        # If leak: stay silent, keep collecting raw_tokens_for_state.
+                        continue
+
+                    if is_leak:
+                        # Hold silently; final flush happens below.
+                        continue
+
+                    # Clean passthrough.
                     all_tokens.append(token)
                     await token_queue.put(token)
             finally:
+                # Final flush: handle the cases where the stream ended before
+                # we reached the decide threshold, or we were in silent leak mode.
+                if not classified:
+                    # Stream ended before HEAD_DECIDE_CHARS — sanitize whatever
+                    # we have and emit it as a single chunk.
+                    full = "".join(raw_tokens_for_state)
+                    cleaned = self.engine._clean_response(full) or ""
+                    if cleaned:
+                        all_tokens.append(cleaned)
+                        await token_queue.put(cleaned)
+                elif is_leak:
+                    full = "".join(raw_tokens_for_state)
+                    cleaned = self.engine._clean_response(full) or ""
+                    if cleaned:
+                        all_tokens.append(cleaned)
+                        await token_queue.put(cleaned)
                 await token_queue.put(_END)
 
         async def _token_consumer() -> AsyncGenerator[str, None]:
@@ -819,8 +919,9 @@ class NLPAgent:
         await producer_task
         await tts_task
 
-        # State bookkeeping
-        original_question = self.engine._clean_response("".join(all_tokens))
+        # State bookkeeping — clean the RAW buffer (all_tokens may already
+        # contain a producer-cleaned single chunk in leak mode).
+        original_question = self.engine._clean_response("".join(raw_tokens_for_state))
         
         print(f"\n   ✓ Generation completed")
         print(f"   📝 Original Question: \"{original_question}\"")
@@ -869,11 +970,26 @@ class NLPAgent:
             print("\n✨ REFINER - Skipped (disabled or no answer)")
 
         state.record_question(final_question)
-        
+
         print("\n" + "="*70)
         print(f"✅ FINAL QUESTION: \"{final_question}\"")
         print("="*70 + "\n")
-        
+
+        # If the producer's leak gate suppressed the entire stream (cleaner
+        # returned empty), nothing has reached the SSE display yet. Emit the
+        # recovery question now so the frontend has something to render.
+        emitted_text = "".join(all_tokens).strip()
+        if not emitted_text and final_question:
+            yield StreamingQuestionChunk(text_delta=final_question)
+            # And feed it to TTS too so the user actually hears the question.
+            if self._tts is not None:
+                try:
+                    tts_result = await self._tts.synthesize(final_question)
+                    if tts_result is not None:
+                        yield StreamingQuestionChunk(text_delta="", tts_result=tts_result)
+                except Exception as e:
+                    print(f"   ✗ Recovery TTS error: {e}")
+
         yield StreamingQuestionChunk(text_delta="", is_final=True)
 
     # ------------------------------------------------------------------

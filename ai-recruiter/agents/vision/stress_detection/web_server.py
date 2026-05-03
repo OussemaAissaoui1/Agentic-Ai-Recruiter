@@ -244,7 +244,10 @@ def _decode_audio(audio_b64: str, sample_rate: int = 44100) -> Optional[np.ndarr
         return None
 
 
-@ws_router.websocket("/ws")
+# Empty route + main.py mount prefix "/ws/vision" → final path is /ws/vision.
+# Previous decorator "/ws" produced "/ws/vision/ws" which the frontend never
+# hits, so every connection got rejected with 403.
+@ws_router.websocket("")
 async def websocket_endpoint(ws: WebSocket, session_id: Optional[str] = Query(default=None)):
     await ws.accept()
     logger.info("WebSocket client connected (session_id=%s)", session_id)

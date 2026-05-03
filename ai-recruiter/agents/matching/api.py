@@ -37,6 +37,30 @@ def build_router(agent) -> APIRouter:
         h = await agent.health()
         return h.model_dump()
 
+    @router.post("/parse")
+    async def parse_cv(file: UploadFile = File(...)):
+        """Parse a single CV (PDF/DOCX/TXT/image) → raw text.
+
+        Used by the screening UI when a candidate is picked for interview:
+        the file already lives in the browser's memory, so we just send it
+        once more and read back the extracted text to pre-fill the
+        interview's CV state. Avoids the user having to re-paste the CV.
+        """
+        from .backend.utils.pdf_reader import read_any
+
+        if not file.filename:
+            raise HTTPException(400, "no filename")
+        upload_dir = str(agent.upload_dir)
+        with tempfile.TemporaryDirectory(dir=upload_dir) as tmp:
+            dest = os.path.join(tmp, file.filename)
+            with open(dest, "wb") as fh:
+                fh.write(await file.read())
+            try:
+                text = read_any(dest) or ""
+            except Exception as e:
+                raise HTTPException(500, f"parse failed: {type(e).__name__}: {e}")
+        return {"id": file.filename, "text": text.strip()}
+
     @router.post("/extract-signals")
     async def extract_signals(
         job_description: str = Form(...),

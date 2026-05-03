@@ -2,7 +2,7 @@
 
 ## 🎯 New Model Configured!
 
-The React app now uses: **`oussema2021/recruiter-persona-llama-3.1-8b-merged-v2`**
+The React app now uses: **`oussema2021/fintuned_v3_AiRecruter`**
 
 ---
 
@@ -44,7 +44,7 @@ npm run dev
 ## 📊 Features Enabled
 
 ### Main Model (GPU)
-- **Model:** `oussema2021/recruiter-persona-llama-3.1-8b-merged-v2`
+- **Model:** `oussema2021/fintuned_v3_AiRecruter`
 - **Size:** 8B parameters
 - **Device:** CUDA GPU
 - **Speed:** ~500ms per question
@@ -89,16 +89,13 @@ NLPAgent (server.py)
 ---
 
 ## 🔍 Monitoring Logs
-
 ### View Real-time Logs
 ```bash
 # Backend logs (model outputs, scorer, refiner)
 tail -f ai-recruiter/agents/nlp/demo/backend.log
-
 # Frontend logs (React dev server)
 tail -f ai-recruiter/agents/nlp/demo/frontend.log
 ```
-
 ### Search Logs
 ```bash
 cd ai-recruiter/agents/nlp/demo
@@ -212,7 +209,7 @@ _agent = NLPAgent(
 
 ## 📝 Next Steps
 
-1. ✅ Model updated to `recruiter-persona-llama-3.1-8b-merged-v2`
+1. ✅ Model updated to `fintuned_v3_AiRecruter`
 2. ✅ Scorer/Refiner enabled in server
 3. 🔄 Run `./start-react-demo.sh`
 4. 🔄 Test the interview flow

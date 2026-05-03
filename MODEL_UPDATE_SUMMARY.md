@@ -2,7 +2,7 @@
 
 ## New Model Configuration
 
-**Model:** `oussema2021/recruiter-persona-llama-3.1-8b-merged-v2`
+**Model:** `oussema2021/fintuned_v3_AiRecruter`
 
 This is the new fine-tuned LLaMA 3.1 8B model for the AI recruiter persona.
 
@@ -13,7 +13,7 @@ This is the new fine-tuned LLaMA 3.1 8B model for the AI recruiter persona.
 ### 1. **Main Agent** ✅
 - **File:** `ai-recruiter/agents/nlp/agent.py`
 - **Line:** 163
-- **Change:** Default model path updated to `oussema2021/recruiter-persona-llama-3.1-8b-merged-v2`
+- **Change:** Default model path updated to `oussema2021/fintuned_v3_AiRecruter`
 
 ### 2. **Demo App** ✅
 - **File:** `ai-recruiter/agents/nlp/demo/app.py`
@@ -100,7 +100,7 @@ When initializing `NLPAgent`, you can customize:
 ```python
 agent = NLPAgent(
     # Main recruiter model (GPU)
-    model_path="oussema2021/recruiter-persona-llama-3.1-8b-merged-v2",
+    model_path="oussema2021/fintuned_v3_AiRecruter",
     
     # Scorer (CPU) - analyzes candidate answers
     enable_scorer=True,
@@ -127,7 +127,7 @@ agent = NLPAgent(
 
 | Model | Size | Purpose | Device | Speed |
 |-------|------|---------|--------|-------|
-| `oussema2021/recruiter-persona-llama-3.1-8b-merged-v2` | 8B | Main recruiter | GPU | ~500ms |
+| `oussema2021/fintuned_v3_AiRecruter` | 8B | Main recruiter | GPU | ~500ms |
 | `Qwen/Qwen2.5-1.5B-Instruct` | 1.5B | Answer scorer | CPU | ~400-800ms |
 | `Qwen/Qwen2.5-1.5B-Instruct` | 1.5B | Question refiner | CPU | ~400-900ms |
 

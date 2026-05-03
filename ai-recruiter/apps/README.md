@@ -1,48 +1,48 @@
 # apps/ — frontends
 
-Three Vite/React sub-apps + a static shell. Each sub-app builds into
-`apps/static/<name>/`, which the unified FastAPI app mounts as a static
-directory.
-
-| Folder | Path served | API base |
+| Folder | Status | Notes |
 |---|---|---|
-| `shell/` | `/` | — (static landing) |
-| `screening/` | `/screening/` | `/api/matching/*` |
-| `interview/` | `/interview/` | `/api/nlp/*` + `/ws/vision` |
-| `behavior/` | `/behavior/` | `/api/vision/*` + `/ws/vision` |
+| `hireflow/` | **active** — sole user-facing frontend | React 19 + TanStack Router SPA, mounted at `/` by `main.py` |
+| `_legacy/` | archived | Old screening / interview / behavior / shell apps + `voice/demo`. Kept for reference only |
 
-## Build
+## HireFlow (active)
 
 ```bash
-bash scripts/build_frontends.sh
-```
-
-This runs `npm ci && npm run build` in each sub-app. Outputs land in
-`apps/static/<name>/` (gitignored).
-
-## Local dev (per sub-app)
-
-```bash
-cd apps/screening    # or interview / behavior
+cd apps/hireflow
 npm install
-npm run dev
+npm run build      # emits apps/hireflow/dist/, picked up by main.py
+npm run dev        # or run dev with vite proxy → uvicorn on :8000
 ```
 
-Each Vite config proxies `/api` and `/ws` to `http://localhost:8000`, so
-running uvicorn alongside `npm run dev` gives you the full app with
-hot-reload on the frontend.
+The Vite config proxies `/api`, `/ws`, `/avatar`, `/files` to
+`http://127.0.0.1:8000` so `npm run dev` + `uvicorn main:app` gives you a
+hot-reloading frontend against the real backend.
 
-## Interview ↔ vision wiring
+## Production layout
 
-`apps/interview/src/vision/useVisionPipeline.js` is a small React hook
-that:
+`main.py` mounts:
 
-1. POSTs `/api/vision/session/start` to open a behavioral session.
-2. Opens a WebSocket to `/ws/vision?session_id=…`.
-3. Streams 4 fps JPEG frames + 16 kHz PCM from the candidate's mic.
-4. Receives the 4-D dimension scores and surfaces them via state.
+- `/assets/*` → `apps/hireflow/dist/assets/` (hashed bundles)
+- everything else (non-API) → `apps/hireflow/dist/index.html` via SPA fallback
 
-`apps/interview/src/vision/BehavioralOverlay.jsx` is the floating
-preview + dimension bars. After every recruiter question the interview
-app fires `vision.markQuestion(text)` so the question shows up on the
-behavioral timeline (visible in the report afterwards).
+So any TanStack Router route (`/app`, `/c/apply/job-1`, `/c/interview/123`)
+is served by the same `index.html` and resolved client-side.
+
+## Backend touch points
+
+The HireFlow client talks to:
+
+- `/api/recruit/*` — jobs, applications, notifications, JD generation, interviews
+- `/api/matching/{parse,rank,health}` — CV parse + scoring
+- `/api/nlp/{session,chat,stream,tts}` — interview turns
+- `/api/vision/session/start`, `/ws/vision` — behavioral analysis
+- `/api/transcribe`, `/ws/transcribe` — speech-to-text
+- `/avatar/{model.glb,visemes}` — 3D avatar
+- `/api/status`, `/api/health` — readiness probes
+
+## Legacy
+
+`apps/_legacy/` contains the previous frontends (`screening/`, `shell/`,
+`behavior/`, `static/` build outputs, and `agents/voice/demo/` moved here
+from `agents/voice/`). They are no longer mounted. Delete the folder when
+you're confident HireFlow has feature parity.

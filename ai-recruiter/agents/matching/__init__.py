@@ -22,7 +22,6 @@ _LEGACY_TO_REAL = {
     "backend.utils": "agents.matching.backend.utils",
     "backend.utils.topic_model": "agents.matching.backend.utils.topic_model",
     "backend.utils.pdf_reader": "agents.matching.backend.utils.pdf_reader",
-    "backend.utils.ocr": "agents.matching.backend.utils.ocr",
     "backend.data": "agents.matching.backend.data",
     "backend.data.dataset": "agents.matching.backend.data.dataset",
     "backend.data.entities": "agents.matching.backend.data.entities",

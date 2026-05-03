@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -21,6 +22,8 @@ from .config import (
 )
 from .data.entities import EntityExtractor
 from .models.encoder import MiniLMEncoder
+
+log = logging.getLogger("agents.matching.inference")
 from .models.ga import ConstraintAwareGA, GACandidate, GAConstraints
 from .models.gnn import BipartiteGraphBuilder, CandidateJobGNN
 from .models.tapjfnn import TAPJFNN
@@ -129,14 +132,24 @@ class RankingPipeline:
         # Combine scores: GNN if available else TAPJFNN else cosine similarity.
         if gnn_probs is not None:
             fit = gnn_probs
+            scorer = "gnn"
         elif tapjfnn_probs is not None:
             fit = tapjfnn_probs
+            scorer = "tapjfnn"
         else:
             # Untrained fallback: cosine similarity between job and resume primaries
             jn = F.normalize(job_primary.unsqueeze(0), dim=-1)
             cn = F.normalize(cand_primaries, dim=-1)
             fit = (cn @ jn.t()).squeeze(-1).cpu().numpy()
             fit = (fit - fit.min()) / (fit.max() - fit.min() + 1e-6)
+            scorer = "cosine_fallback"
+        log.info(
+            "rank: n=%d scorer=%s tapjfnn=%s gnn=%s lda=%s",
+            len(resumes), scorer,
+            self.tapjfnn is not None,
+            self.gnn is not None,
+            self.lda_j is not None and self.lda_r is not None,
+        )
 
         out: List[RankedCandidate] = []
         for i, rid in enumerate(ids):
