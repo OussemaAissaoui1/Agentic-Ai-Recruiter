@@ -25,6 +25,11 @@ _AGENT_DIR = Path(__file__).resolve().parent
 _CARD_PATH = _AGENT_DIR / "agent_card.json"
 
 
+# Module-scope so FastAPI/Pydantic 2.12 can resolve forward references for /docs.
+class VisemeRequest(BaseModel):
+    wav_b64: str
+
+
 class AvatarAgentAdapter(BaseAgent):
     name = "avatar"
     version = "0.2.0"
@@ -95,9 +100,6 @@ class AvatarAgentAdapter(BaseAgent):
     def _build_router(self) -> APIRouter:
         router = APIRouter(tags=["avatar"])
         inner = self._inner
-
-        class VisemeRequest(BaseModel):
-            wav_b64: str
 
         @router.get("/health")
         async def health():

@@ -50,8 +50,17 @@ class MatchingAgent(BaseAgent):
 
     # ------------------------------------------------------------------ lifecycle
     async def startup(self, app_state: Any) -> None:
-        # Heavy ML loads stay lazy on first /api/matching/rank call.
-        log.info("matching.startup ok (lazy init)")
+        # Pre-warm the ranking pipeline so /api/matching/health reports
+        # tapjfnn_loaded / gnn_loaded / lda_loaded = true from t=0 (otherwise
+        # they sit at false until the first /api/matching/rank request, which
+        # makes the screening UI look like the models are missing).
+        # If load fails we don't crash startup — health() will surface the
+        # specific reason and ranking falls back to cosine.
+        try:
+            await self._ensure_pipeline()
+            log.info("matching.startup ok (pipeline pre-loaded)")
+        except Exception as e:
+            log.warning("matching.startup: pipeline preload failed (%s); will retry lazily", e)
 
     async def shutdown(self) -> None:
         self._pipeline = None

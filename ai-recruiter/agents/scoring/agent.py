@@ -37,6 +37,14 @@ from core.observability import bind_agent_logger
 log = bind_agent_logger("scoring")
 
 
+# Module-scope so FastAPI/Pydantic 2.12 can resolve forward references for /docs.
+class ScoreIn(BaseModel):
+    source: str                      # "nlp" | "vision" | "voice" | …
+    kind: str                        # e.g. "answer_quality", "engagement"
+    value: float
+    payload: Dict[str, Any] = {}
+
+
 class ScoringAgent(BaseAgent):
     name = "scoring"
     version = "0.2.0"
@@ -117,12 +125,6 @@ class ScoringAgent(BaseAgent):
     # ------------------------------------------------------------------ router
     def _build_router(self) -> APIRouter:
         router = APIRouter(tags=["scoring"])
-
-        class ScoreIn(BaseModel):
-            source: str                      # "nlp" | "vision" | "voice" | …
-            kind: str                        # e.g. "answer_quality", "engagement"
-            value: float
-            payload: Dict[str, Any] = {}
 
         @router.get("/health")
         async def health():

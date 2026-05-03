@@ -13,7 +13,8 @@ server:
   cors_origins: ["*"]            # tighten in production
 
 gpu_policy:
-  vllm_mem_fraction: 0.55        # leaves 30-40% for vision (mediapipe + wav2vec2)
+  vllm_mem_fraction: 0.85        # L4 (24GB): need 0.85 to fit 8B weights + KV cache
+                                 # if running on a 90GB+ GPU shared with vision, drop to 0.55
   prefer_gpu_for: ["nlp", "vision_visual_mlp", "matching_gnn"]
   prefer_cpu_for: ["nlp_scorer", "nlp_refiner", "nlp_tts", "matching_lda"]
 
@@ -53,3 +54,7 @@ nlp:
   enable_refiner: true
   enable_tts: true
   tts_voice: "af_heart"
+  # vLLM context window. 2048 is too small for system prompt + full CV + JD +
+  # history; 8192 is the safe default. Override per-deployment with the
+  # NLP_MAX_MODEL_LEN env var.
+  max_model_len: 8192

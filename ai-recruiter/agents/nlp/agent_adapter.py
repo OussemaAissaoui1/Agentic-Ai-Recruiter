@@ -9,6 +9,7 @@ router.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -44,10 +45,17 @@ class NLPAgentAdapter(BaseAgent):
     # ------------------------------------------------------------------ lifecycle
     async def startup(self, app_state: Any) -> None:
         cfg = load_runtime().get("nlp", {})
+        # Context window: env override > config > 8192 default. 2048 is too
+        # small for system prompt + CV + JD + history (vLLM rejects long
+        # prompts with "maximum context length is N tokens").
+        max_model_len = int(
+            os.environ.get("NLP_MAX_MODEL_LEN", cfg.get("max_model_len", 8192))
+        )
         try:
             from .agent import NLPAgent
             self._inner = NLPAgent(
                 model_path=str(resolve(cfg.get("model_path", "model_cache"))),
+                max_model_len=max_model_len,
                 enable_scorer=cfg.get("enable_scorer", True),
                 scorer_model=cfg.get("scorer_model", "Qwen/Qwen2.5-1.5B-Instruct"),
                 enable_refiner=cfg.get("enable_refiner", True),
@@ -60,7 +68,7 @@ class NLPAgentAdapter(BaseAgent):
                 auto_cleanup_gpu=False,
                 load_timeout_sec=300,
             )
-            log.info("nlp.startup ok (lazy vllm)")
+            log.info("nlp.startup ok (lazy vllm, max_model_len=%d)", max_model_len)
         except Exception as e:
             self._init_error = f"{type(e).__name__}: {e}"
             log.exception("nlp.startup failed: %s", e)

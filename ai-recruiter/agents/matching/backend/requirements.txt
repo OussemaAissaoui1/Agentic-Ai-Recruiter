@@ -14,19 +14,26 @@ pypdf>=4.0.0
 python-docx>=1.1.0
 torch-geometric>=2.4.0
 accelerate>=0.29.0
-paddlepaddle>=2.6.0
-paddleocr>=2.7.0
 pymupdf>=1.24.0
-# For GPU OCR on CUDA 12 (L4 / RTX 6000 Pro etc):
+
+# ---------------------------------------------------------------------------
+# OCR (PaddleOCR)
+#
+# This file defaults to the CPU build of paddle. For GPU OCR install
+# `requirements-gpu.txt` INSTEAD of these two lines (it pulls
+# paddlepaddle-gpu from the PaddlePaddle index, plus paddleocr 3.x).
+#
 #   pip uninstall -y paddlepaddle paddlepaddle-gpu
-#   pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-# (swap cu126 → cu123 / cu118 to match your `nvidia-smi` CUDA version)
+#   pip install -r requirements-gpu.txt          # GPU
+#   # — or —
+#   pip install -r requirements.txt              # CPU only
 #
-# IMPORTANT: do NOT install paddlepaddle-gpu==2.6.x — those wheels ship
-# bundled cuDNN 8 sublibraries that conflict with PyTorch's cuDNN 9 ABI.
-# Symptom: CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH on both paddle and torch
-# the moment any cuDNN op runs. paddle 3.x links against cuDNN 9 and is the
-# only line that coexists with modern torch.
+# IMPORTANT: do NOT mix paddlepaddle (cpu) and paddlepaddle-gpu in the same
+# env. Always uninstall both before switching builds.
 #
-# Our backend/utils/ocr.py monkey-patches paddle.inference.Config to disable
-# the PIR executor + oneDNN at construction time, so paddle 3.x is safe here.
+# Why paddleocr>=3.0: 3.x switched to `device="gpu"` and dropped `use_gpu`,
+# `show_log`, `use_angle_cls`. backend/utils/_ocr_worker.py prefers the 3.x
+# kwargs and falls back to 2.x only when the installed paddleocr is older.
+# ---------------------------------------------------------------------------
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0

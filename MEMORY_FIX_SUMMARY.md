@@ -2,7 +2,6 @@
 
 ## Problem
 The NLP agent was not reading candidate answers and responded with another question without acknowledgment. The LLM would ask a question, the candidate would answer, but then the LLM would just ask another question without acknowledging or referencing the previous answer.
-
 ## Root Cause
 1. **Missing Contextual Link**: The candidate's latest answer was added to the prompt as a standalone "user" message, without being explicitly linked to the previous question. The LLM didn't understand it was an answer to its previous question.
 

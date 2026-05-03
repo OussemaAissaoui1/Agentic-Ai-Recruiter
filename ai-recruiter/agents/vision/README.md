@@ -58,7 +58,8 @@ results and dimension scores.
 
 ## Live wiring with the interview
 
-The interview UI (`apps/interview/`) opens both connections concurrently:
+The interview UI (built from `agents/avatar/demo/`, deployed to
+`apps/static/interview/`) opens both connections concurrently:
 
 1. `POST /api/nlp/session` for the chat session (Llama recruiter)
 2. `POST /api/vision/session/start` for behavioral analysis

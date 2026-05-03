@@ -189,10 +189,10 @@ MODEL_PATH="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/
 # Absolute path to the fine-tuned merged model.
 # This path is checked during startup to fail fast if the model is missing.
 
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-2048}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 # Maximum context length for vLLM.
-# 2048 is tight but sufficient for interviews:
-# System prompt (~600) + history (~600) + current (~200) + generation (~48) ≈ 1448
+# 8192 covers system prompt + full CV (often 2-3 KB) + JD + history + answer.
+# Llama-3.1-8B supports 128K natively; 8K is the sweet spot for interview KV-cache cost.
 
 GPU_MEMORY_UTIL="${GPU_MEMORY_UTIL:-0.92}"
 # Fraction of GPU memory vLLM can use.

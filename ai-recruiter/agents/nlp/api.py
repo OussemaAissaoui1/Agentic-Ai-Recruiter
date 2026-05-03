@@ -1,8 +1,8 @@
 """HTTP router for the NLP agent. Mounted at /api/nlp by the unified app.
 
-This file replaces the old standalone agents/nlp/demo/server.py for the
-unified deployment path. The standalone server is preserved for the
-non-unified demo workflow but is deprecated.
+This is the live entry point. The legacy standalone server has been
+quarantined to apps/_legacy/nlp_demo/ and is no longer wired into the
+runtime — keep the old code around for reference only.
 """
 
 from __future__ import annotations
@@ -18,27 +18,35 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 
+# ------------------------------------------------------------------- pydantic
+# These models are defined at module scope (not inside build_router) so that
+# FastAPI's OpenAPI introspection can resolve their forward references.
+# Pydantic 2.12 cannot fully resolve types that live only in a function-local
+# closure, which made /docs return 500.
+class SessionCreateRequest(BaseModel):
+    cv_text: str
+    job_role: str = "AI Engineering Intern"
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+
+
+class ChatRequest(BaseModel):
+    session_id: str
+    cv_text: str
+    job_role: str
+    answer: str
+    history: list = []
+
+
+class TTSRequest(BaseModel):
+    text: str
+
+
 def build_router(agent) -> APIRouter:
     """Build the /api/nlp router bound to an NLPAgentAdapter."""
     router = APIRouter(tags=["nlp"])
-
-    # --------------------------------------------------------------- pydantic
-    class SessionCreateRequest(BaseModel):
-        cv_text: str
-        job_role: str = "AI Engineering Intern"
-
-    class SessionResponse(BaseModel):
-        session_id: str
-
-    class ChatRequest(BaseModel):
-        session_id: str
-        cv_text: str
-        job_role: str
-        answer: str
-        history: list = []
-
-    class TTSRequest(BaseModel):
-        text: str
 
     # --------------------------------------------------------------- routes
     @router.get("/health")
