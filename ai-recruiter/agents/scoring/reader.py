@@ -52,7 +52,7 @@ def load_context(
     if row is None:
         raise LookupError(f"interview not found: {interview_id}")
 
-    if inline_override is not None:
+    if inline_override:
         transcript = list(inline_override)
     else:
         transcript = _parse_transcript(row["transcript_json"])

@@ -7,6 +7,7 @@ and writes the headline numbers back to interviews.scores_json.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 from pathlib import Path
@@ -171,9 +172,9 @@ class ScoringAgent(BaseAgent):
             raise HTTPException(503, "recruit DB is not configured")
 
         try:
-            ctx = load_context(
-                self._recruit_conn, interview_id,
-                inline_override=req.transcript,
+            ctx = await asyncio.to_thread(
+                load_context, self._recruit_conn, interview_id,
+                req.transcript,
             )
         except LookupError as exc:
             raise HTTPException(404, str(exc))
@@ -195,11 +196,11 @@ class ScoringAgent(BaseAgent):
         )
 
         try:
-            write_cache(self._artifacts_dir, report)
+            await asyncio.to_thread(write_cache, self._artifacts_dir, report)
         except OSError as exc:
             log.warning("scoring.write_cache failed: %s", exc)
         try:
-            write_back_scores(self._recruit_conn, report)
+            await asyncio.to_thread(write_back_scores, self._recruit_conn, report)
         except Exception as exc:
             log.warning("scoring.write_back_scores failed: %s", exc)
         return report
