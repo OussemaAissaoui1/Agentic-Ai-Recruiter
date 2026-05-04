@@ -2,6 +2,8 @@ import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FitBadge, StageChip } from "@/components/Bits";
+import { RowRecommendation } from "@/components/scoring/RowRecommendation";
+import { ScoreSummaryCard } from "@/components/scoring/ScoreSummaryCard";
 import {
   Filter,
   GitCompare,
@@ -239,6 +241,10 @@ function Applicants() {
                   <StageChip stage={stageToChip(c.stage)} />
                 </div>
                 <div className="col-span-2 flex items-center justify-end gap-2">
+                  <RowRecommendation
+                    applicationId={c.id}
+                    enabled={c.stage === "interviewed"}
+                  />
                   <FitBadge value={fit} size="sm" />
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -421,6 +427,10 @@ function CandidatePanel({ c, job }: { c: Application; job?: Job }) {
           <p className="mt-2 text-sm">{c.notes}</p>
         </div>
       )}
+
+      {(c.stage === "interviewed" ||
+        c.stage === "offer" ||
+        c.stage === "hired") && <ScoreSummaryCard applicationId={c.id} />}
 
       <div className="text-xs text-muted-foreground">
         Applied for <span className="font-medium text-foreground">{job?.title}</span>
