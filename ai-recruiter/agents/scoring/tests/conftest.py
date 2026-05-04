@@ -5,6 +5,7 @@ import json
 import sqlite3
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -68,3 +69,30 @@ def empty_interview_conn(tmp_path: Path) -> sqlite3.Connection:
         ("int-empty", "app-empty", "[]"),
     )
     return conn
+
+
+class FakeGroq:
+    """Test double for GroqClient. Records calls; replies from a queue."""
+
+    def __init__(self, replies: list[Any]) -> None:
+        self._replies = list(replies)
+        self.calls: list[dict[str, Any]] = []
+
+    async def chat_json(self, *, system: str, user: str, **kw: Any) -> Any:
+        self.calls.append({"system": system, "user": user, **kw})
+        if not self._replies:
+            raise AssertionError("FakeGroq exhausted; add more replies")
+        item = self._replies.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    async def aclose(self) -> None:
+        return None
+
+
+@pytest.fixture
+def fake_groq_factory():
+    def _make(replies: list[Any]) -> FakeGroq:
+        return FakeGroq(replies)
+    return _make
