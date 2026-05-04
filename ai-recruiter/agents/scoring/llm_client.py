@@ -58,9 +58,11 @@ class GroqClient:
         """Send one chat completion and parse the assistant message as JSON.
 
         response_format is forced to json_object. On 5xx or read timeout, we
-        retry up to max_retries with exponential backoff. On 4xx or any other
-        failure we raise GroqError immediately. On JSON parse failure of the
-        assistant content we raise GroqError.
+        retry up to max_retries with exponential backoff. On JSON parse
+        failure or malformed response shape we raise GroqError. The
+        4xx-never-retries policy is structural: 4xx responses raise directly
+        without entering the retry/sleep path, so the decision does not depend
+        on parsing the exception message.
         """
         payload = {
             "model": model,
@@ -82,25 +84,34 @@ class GroqClient:
                 resp = await self._client.post(
                     GROQ_URL, json=payload, headers=headers, timeout=timeout,
                 )
-                if resp.status_code >= 500:
-                    raise GroqError(f"groq {resp.status_code}: {resp.text[:200]}")
-                if resp.status_code >= 400:
-                    raise GroqError(f"groq {resp.status_code}: {resp.text[:200]}")
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError as exc:
-                    raise GroqError(f"non-json content: {exc}") from exc
-            except (httpx.TimeoutException, GroqError) as exc:
-                # Retry only transient failures (timeouts and 5xx). 4xx GroqError
-                # contents start with "groq 4" — don't retry those.
+            except httpx.TimeoutException as exc:
                 last_exc = exc
-                msg = str(exc)
-                is_4xx = msg.startswith("groq 4")
-                if is_4xx or attempt >= max_retries:
-                    raise GroqError(msg) from exc
+                if attempt >= max_retries:
+                    raise GroqError(
+                        f"timeout after {max_retries + 1} attempts: {exc}"
+                    ) from exc
                 await asyncio.sleep(0.5 * (2 ** attempt))
+                continue
 
-        # Defensive — loop above should always return or raise.
+            if resp.status_code >= 500:
+                last_exc = GroqError(f"groq {resp.status_code}: {resp.text[:200]}")
+                if attempt >= max_retries:
+                    raise last_exc
+                await asyncio.sleep(0.5 * (2 ** attempt))
+                continue
+
+            if resp.status_code >= 400:
+                # 4xx — never retry
+                raise GroqError(f"groq {resp.status_code}: {resp.text[:200]}")
+
+            data = resp.json()
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise GroqError(f"unexpected groq response shape: {exc}") from exc
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as exc:
+                raise GroqError(f"non-json content from groq: {exc}") from exc
+
         raise GroqError(f"unreachable: {last_exc}")
