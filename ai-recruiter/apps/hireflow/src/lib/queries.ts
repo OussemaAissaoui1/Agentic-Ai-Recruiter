@@ -120,6 +120,15 @@ export function useApplications(
   return useQuery<Application[]>({
     queryKey: qk.applications(params),
     queryFn: ({ signal }) => applications.list(params, { signal }),
+    refetchOnWindowFocus: true,
+    // Poll while any application is still 'applied' so the candidate's
+    // dashboard reflects recruiter approvals without a manual refresh.
+    // Once everything's settled (no 'applied' rows), polling stops.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      return data.some((a) => a.stage === "applied") ? 15_000 : false;
+    },
   });
 }
 
