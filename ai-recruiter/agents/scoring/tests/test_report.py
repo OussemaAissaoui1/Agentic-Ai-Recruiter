@@ -116,3 +116,18 @@ def test_write_back_scores_updates_db(recruit_conn):
     assert payload["recommendation"] == "hire"
     assert payload["technical_avg"] == 3.5
     assert "generated_at" in payload
+
+
+def test_write_back_scores_swallows_sqlite_error(tmp_path: Path):
+    """write_back_scores is best-effort: a closed connection must not raise."""
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.close()
+    # Should not raise
+    write_back_scores(conn, _full_report())
+
+
+def test_read_cache_returns_none_on_corrupt_json(tmp_path: Path):
+    """A partial / corrupt JSON file in the cache directory yields None, not an exception."""
+    (tmp_path / "int-x_report.json").write_text("{not valid json")
+    assert read_cache(tmp_path, "int-x") is None

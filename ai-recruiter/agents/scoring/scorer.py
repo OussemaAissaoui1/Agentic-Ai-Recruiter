@@ -129,7 +129,7 @@ async def _score_overall(
             temperature=0.3, timeout=timeout, max_retries=1,
         )
         rec = data.get("recommendation")
-        if rec not in {"strong_hire", "hire", "lean_hire", "no_hire"}:
+        if not isinstance(rec, str) or rec not in {"strong_hire", "hire", "lean_hire", "no_hire"}:
             rec = build_overall_fallback(tech_avg, coh_avg).recommendation
         return OverallAssessment(
             recommendation=rec,
@@ -139,7 +139,7 @@ async def _score_overall(
             strengths=[str(s) for s in (data.get("strengths") or [])][:6],
             concerns=[str(s) for s in (data.get("concerns") or [])][:6],
         )
-    except GroqError as exc:
+    except (GroqError, TypeError, ValueError, KeyError) as exc:
         fb = build_overall_fallback(tech_avg, coh_avg)
         return OverallAssessment(
             recommendation=fb.recommendation,
