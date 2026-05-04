@@ -1,4 +1,4 @@
-"""Scoring agent — collects per-modality scores, persists to JSONL."""
+"""Scoring agent — generates hiring-decision reports from completed interviews."""
 
 from .agent import ScoringAgent
 
