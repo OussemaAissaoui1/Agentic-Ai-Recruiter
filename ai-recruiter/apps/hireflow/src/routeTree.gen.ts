@@ -24,6 +24,7 @@ import { Route as CInterviewIdRouteImport } from './routes/c.interview.$id'
 import { Route as CApplyIdRouteImport } from './routes/c.apply.$id'
 import { Route as AppJobsNewRouteImport } from './routes/app.jobs.new'
 import { Route as AppJobsIdRouteImport } from './routes/app.jobs.$id'
+import { Route as AppApplicantsIdReportRouteImport } from './routes/app.applicants.$id.report'
 
 const CRoute = CRouteImport.update({
   id: '/c',
@@ -100,13 +101,18 @@ const AppJobsIdRoute = AppJobsIdRouteImport.update({
   path: '/jobs/$id',
   getParentRoute: () => AppRoute,
 } as any)
+const AppApplicantsIdReportRoute = AppApplicantsIdReportRouteImport.update({
+  id: '/$id/report',
+  path: '/$id/report',
+  getParentRoute: () => AppApplicantsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/c': typeof CRouteWithChildren
   '/app/analytics': typeof AppAnalyticsRoute
-  '/app/applicants': typeof AppApplicantsRoute
+  '/app/applicants': typeof AppApplicantsRouteWithChildren
   '/app/radar': typeof AppRadarRoute
   '/c/applications': typeof CApplicationsRoute
   '/c/profile': typeof CProfileRoute
@@ -117,11 +123,12 @@ export interface FileRoutesByFullPath {
   '/c/apply/$id': typeof CApplyIdRoute
   '/c/interview/$id': typeof CInterviewIdRoute
   '/app/jobs/': typeof AppJobsIndexRoute
+  '/app/applicants/$id/report': typeof AppApplicantsIdReportRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app/analytics': typeof AppAnalyticsRoute
-  '/app/applicants': typeof AppApplicantsRoute
+  '/app/applicants': typeof AppApplicantsRouteWithChildren
   '/app/radar': typeof AppRadarRoute
   '/c/applications': typeof CApplicationsRoute
   '/c/profile': typeof CProfileRoute
@@ -132,6 +139,7 @@ export interface FileRoutesByTo {
   '/c/apply/$id': typeof CApplyIdRoute
   '/c/interview/$id': typeof CInterviewIdRoute
   '/app/jobs': typeof AppJobsIndexRoute
+  '/app/applicants/$id/report': typeof AppApplicantsIdReportRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -139,7 +147,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/c': typeof CRouteWithChildren
   '/app/analytics': typeof AppAnalyticsRoute
-  '/app/applicants': typeof AppApplicantsRoute
+  '/app/applicants': typeof AppApplicantsRouteWithChildren
   '/app/radar': typeof AppRadarRoute
   '/c/applications': typeof CApplicationsRoute
   '/c/profile': typeof CProfileRoute
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   '/c/apply/$id': typeof CApplyIdRoute
   '/c/interview/$id': typeof CInterviewIdRoute
   '/app/jobs/': typeof AppJobsIndexRoute
+  '/app/applicants/$id/report': typeof AppApplicantsIdReportRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/c/apply/$id'
     | '/c/interview/$id'
     | '/app/jobs/'
+    | '/app/applicants/$id/report'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/c/apply/$id'
     | '/c/interview/$id'
     | '/app/jobs'
+    | '/app/applicants/$id/report'
   id:
     | '__root__'
     | '/'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/c/apply/$id'
     | '/c/interview/$id'
     | '/app/jobs/'
+    | '/app/applicants/$id/report'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -316,12 +328,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppJobsIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/applicants/$id/report': {
+      id: '/app/applicants/$id/report'
+      path: '/$id/report'
+      fullPath: '/app/applicants/$id/report'
+      preLoaderRoute: typeof AppApplicantsIdReportRouteImport
+      parentRoute: typeof AppApplicantsRoute
+    }
   }
 }
 
+interface AppApplicantsRouteChildren {
+  AppApplicantsIdReportRoute: typeof AppApplicantsIdReportRoute
+}
+
+const AppApplicantsRouteChildren: AppApplicantsRouteChildren = {
+  AppApplicantsIdReportRoute: AppApplicantsIdReportRoute,
+}
+
+const AppApplicantsRouteWithChildren = AppApplicantsRoute._addFileChildren(
+  AppApplicantsRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAnalyticsRoute: typeof AppAnalyticsRoute
-  AppApplicantsRoute: typeof AppApplicantsRoute
+  AppApplicantsRoute: typeof AppApplicantsRouteWithChildren
   AppRadarRoute: typeof AppRadarRoute
   AppIndexRoute: typeof AppIndexRoute
   AppJobsIdRoute: typeof AppJobsIdRoute
@@ -331,7 +362,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAnalyticsRoute: AppAnalyticsRoute,
-  AppApplicantsRoute: AppApplicantsRoute,
+  AppApplicantsRoute: AppApplicantsRouteWithChildren,
   AppRadarRoute: AppRadarRoute,
   AppIndexRoute: AppIndexRoute,
   AppJobsIdRoute: AppJobsIdRoute,

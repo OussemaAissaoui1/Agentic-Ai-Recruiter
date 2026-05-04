@@ -106,6 +106,52 @@ export type TranscribeResponse = { text: string };
 
 export type VisionSessionResponse = { session_id: string };
 
+// ─── Interviews ──────────────────────────────────────────────────────────────
+export type InterviewTurn = { q: string; a: string };
+
+export type Interview = {
+  id: string;
+  application_id: string;
+  transcript: InterviewTurn[];
+  scores: Record<string, unknown>;
+  behavioral: Record<string, unknown>;
+  status: string;
+  started_at: number | null;
+  ended_at: number | null;
+};
+
+// ─── Scoring ─────────────────────────────────────────────────────────────────
+export type Recommendation = "strong_hire" | "hire" | "lean_hire" | "no_hire";
+
+export type TurnScore = {
+  turn_index: number;
+  question: string;
+  answer: string;
+  technical_score: number | null;
+  technical_rationale: string;
+  coherence_score: number | null;
+  coherence_rationale: string;
+};
+
+export type OverallAssessment = {
+  recommendation: Recommendation;
+  technical_avg: number;
+  coherence_avg: number;
+  summary: string;
+  strengths: string[];
+  concerns: string[];
+};
+
+export type InterviewReport = {
+  interview_id: string;
+  candidate_name: string | null;
+  job_title: string | null;
+  generated_at: number;
+  model: string;
+  turns: TurnScore[];
+  overall: OverallAssessment;
+};
+
 type FetchOpts = { signal?: AbortSignal };
 
 async function request<T>(
@@ -264,6 +310,78 @@ export const applications = {
     request<{ ok: boolean } | Application>(
       `/api/recruit/applications/${encodeURIComponent(id)}/invite-interview`,
       { method: "POST", signal: opts?.signal },
+    ),
+};
+
+// ─── Interviews ──────────────────────────────────────────────────────────────
+export const interviews = {
+  list: (
+    params: { application_id?: string } = {},
+    opts?: FetchOpts,
+  ) =>
+    request<Interview[]>(`/api/recruit/interviews${qs(params)}`, {
+      signal: opts?.signal,
+    }),
+
+  get: (id: string, opts?: FetchOpts) =>
+    request<Interview>(`/api/recruit/interviews/${encodeURIComponent(id)}`, {
+      signal: opts?.signal,
+    }),
+
+  create: (
+    body: {
+      application_id: string;
+      status?: string;
+      transcript?: InterviewTurn[];
+      started_at?: number;
+      ended_at?: number;
+    },
+    opts?: FetchOpts,
+  ) =>
+    request<Interview>("/api/recruit/interviews", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal: opts?.signal,
+    }),
+};
+
+// ─── Scoring ─────────────────────────────────────────────────────────────────
+export const scoring = {
+  health: (opts?: FetchOpts) =>
+    request<Record<string, unknown>>("/api/scoring/health", {
+      signal: opts?.signal,
+    }),
+
+  run: (
+    interview_id: string,
+    body: { force?: boolean; transcript?: InterviewTurn[] } = {},
+    opts?: FetchOpts,
+  ) =>
+    request<InterviewReport>(
+      `/api/scoring/${encodeURIComponent(interview_id)}/run`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        signal: opts?.signal,
+      },
+    ),
+
+  report: (interview_id: string, opts?: FetchOpts) =>
+    request<InterviewReport>(
+      `/api/scoring/${encodeURIComponent(interview_id)}/report`,
+      { signal: opts?.signal },
+    ),
+
+  reportMarkdown: (interview_id: string, opts?: FetchOpts) =>
+    request<string>(
+      `/api/scoring/${encodeURIComponent(interview_id)}/report.md`,
+      { signal: opts?.signal },
+    ),
+
+  deleteReport: (interview_id: string, opts?: FetchOpts) =>
+    request<{ deleted: boolean }>(
+      `/api/scoring/${encodeURIComponent(interview_id)}/report`,
+      { method: "DELETE", signal: opts?.signal },
     ),
 };
 
@@ -472,6 +590,8 @@ export const api = {
   health,
   jobs,
   applications,
+  interviews,
+  scoring,
   notifications,
   matching,
   nlp,

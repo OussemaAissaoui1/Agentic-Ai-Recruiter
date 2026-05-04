@@ -9,10 +9,15 @@ import {
 import {
   applications,
   health,
+  interviews,
   jobs,
   notifications,
+  scoring,
   type Application,
   type ApplicationStage,
+  type Interview,
+  type InterviewReport,
+  type InterviewTurn,
   type Job,
   type Notification,
   type StatusResponse,
@@ -35,6 +40,12 @@ export const qk = {
     user_id?: string;
     unread_only?: boolean;
   }) => ["notifications", params ?? {}] as const,
+  interviewsByApp: (application_id: string) =>
+    ["interviews", { application_id }] as const,
+  interview: (interview_id: string) =>
+    ["interview", interview_id] as const,
+  scoringReport: (interview_id: string) =>
+    ["scoring", interview_id, "report"] as const,
 };
 
 // ─── Status / Health ─────────────────────────────────────────────────────────
@@ -193,6 +204,98 @@ export function useMarkNotificationRead() {
     mutationFn: (id) => notifications.markRead(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+// ─── Interviews ──────────────────────────────────────────────────────────────
+export function useInterviewsByApplication(application_id: string | undefined) {
+  return useQuery<Interview[]>({
+    queryKey: qk.interviewsByApp(application_id ?? ""),
+    queryFn: ({ signal }) =>
+      interviews.list({ application_id }, { signal }),
+    enabled: !!application_id,
+  });
+}
+
+export function useInterview(interview_id: string | undefined) {
+  return useQuery<Interview>({
+    queryKey: qk.interview(interview_id ?? ""),
+    queryFn: ({ signal }) =>
+      interviews.get(interview_id as string, { signal }),
+    enabled: !!interview_id,
+  });
+}
+
+export function useCreateInterview() {
+  const qc = useQueryClient();
+  return useMutation<
+    Interview,
+    Error,
+    {
+      application_id: string;
+      transcript: InterviewTurn[];
+      status?: string;
+      started_at?: number;
+      ended_at?: number;
+    }
+  >({
+    mutationFn: (body) => interviews.create(body),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({
+        queryKey: qk.interviewsByApp(vars.application_id),
+      });
+      qc.invalidateQueries({ queryKey: ["applications"] });
+    },
+  });
+}
+
+// ─── Scoring ─────────────────────────────────────────────────────────────────
+export function useScoringReport(interview_id: string | undefined) {
+  return useQuery<InterviewReport | null>({
+    queryKey: qk.scoringReport(interview_id ?? ""),
+    queryFn: async ({ signal }) => {
+      try {
+        return await scoring.report(interview_id as string, { signal });
+      } catch (err) {
+        // 404 = report not yet generated; surface as null instead of throwing
+        const status = (err as { status?: number } | null)?.status;
+        if (status === 404) return null;
+        throw err;
+      }
+    },
+    enabled: !!interview_id,
+    retry: (failureCount, err) => {
+      const status = (err as { status?: number } | null)?.status;
+      if (status === 404) return false;
+      return failureCount < 2;
+    },
+  });
+}
+
+export function useRunScoring() {
+  const qc = useQueryClient();
+  return useMutation<
+    InterviewReport,
+    Error,
+    { interview_id: string; force?: boolean; transcript?: InterviewTurn[] }
+  >({
+    mutationFn: ({ interview_id, force, transcript }) =>
+      scoring.run(interview_id, { force, transcript }),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.scoringReport(data.interview_id), data);
+      qc.invalidateQueries({ queryKey: ["interviews"] });
+      qc.invalidateQueries({ queryKey: ["applications"] });
+    },
+  });
+}
+
+export function useDeleteScoringReport() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: boolean }, Error, string>({
+    mutationFn: (interview_id) => scoring.deleteReport(interview_id),
+    onSuccess: (_data, interview_id) => {
+      qc.setQueryData(qk.scoringReport(interview_id), null);
     },
   });
 }

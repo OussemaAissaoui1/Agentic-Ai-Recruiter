@@ -10,7 +10,12 @@ import {
   type Application,
   type Job,
 } from "@/lib/api";
-import { useApplication, useJob, useUpdateApplication } from "@/lib/queries";
+import {
+  useApplication,
+  useCreateInterview,
+  useJob,
+  useUpdateApplication,
+} from "@/lib/queries";
 import { useApp } from "@/lib/store";
 import { toast } from "sonner";
 
@@ -193,6 +198,29 @@ function PreflightCheck({ icon, label, ok }: { icon: React.ReactNode; label: str
 // ─── Live ────────────────────────────────────────────────────────────────────
 type Turn = { role: "user" | "assistant"; content: string };
 
+/**
+ * Convert the interview's alternating assistant/user history into the
+ * canonical [{q, a}] transcript shape used by the recruit DB and scoring
+ * agent. Pairs each `assistant` (recruiter) turn with the immediately
+ * following `user` (candidate) turn. Trailing un-answered assistant turns
+ * are dropped — scoring needs Q+A pairs.
+ */
+function historyToTranscript(
+  history: Turn[],
+): Array<{ q: string; a: string }> {
+  const out: Array<{ q: string; a: string }> = [];
+  let pending: string | null = null;
+  for (const turn of history) {
+    if (turn.role === "assistant") {
+      pending = turn.content;
+    } else if (turn.role === "user" && pending !== null) {
+      out.push({ q: pending, a: turn.content });
+      pending = null;
+    }
+  }
+  return out;
+}
+
 function Live({
   stream,
   application,
@@ -233,6 +261,43 @@ function Live({
 
   const jobRole = job?.title || "Candidate";
   const cvText = profile.cvText || "";
+
+  // Persist the captured transcript to the recruit DB so the scoring agent
+  // can score it later. Best-effort: a failure here doesn't block the
+  // candidate from finishing — scoring can fall back to an inline override.
+  const createInterview = useCreateInterview();
+  const startedAtRef = useRef<number>(Date.now() / 1000);
+  const persistGuard = useRef(false);
+  const finishInterview = useCallback(
+    async (finalHistory: Turn[]) => {
+      if (persistGuard.current) {
+        onDone();
+        return;
+      }
+      persistGuard.current = true;
+      try {
+        const transcript = historyToTranscript(finalHistory);
+        if (application?.id && transcript.length > 0) {
+          await createInterview.mutateAsync({
+            application_id: application.id,
+            transcript,
+            status: "completed",
+            started_at: startedAtRef.current,
+            ended_at: Date.now() / 1000,
+          });
+        }
+      } catch (e) {
+        // Don't block the candidate UX. The recruiter can still score via
+        // an inline-override request if the persist failed.
+        toast.error(
+          `Couldn't save transcript: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      } finally {
+        onDone();
+      }
+    },
+    [application?.id, createInterview, onDone],
+  );
 
   // ── Self-view ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -416,12 +481,12 @@ function Live({
     const newHistory = [...history, { role: "user" as const, content: answer }];
     setHistory(newHistory);
     if (qIdx + 1 >= totalQ) {
-      onDone();
+      void finishInterview(newHistory);
       return;
     }
     setQIdx((i) => i + 1);
     await askNext(answer, newHistory);
-  }, [askNext, history, onDone, qIdx, stt, totalQ]);
+  }, [askNext, finishInterview, history, qIdx, stt, totalQ]);
 
   useEffect(() => {
     if (!stt.isRecording) return;
@@ -530,7 +595,7 @@ function Live({
           className="grid h-10 w-10 place-items-center rounded-full bg-white/10">
           <Pause className="h-4 w-4" />
         </button>
-        <button onClick={() => { stt.stop(); onDone(); }}
+        <button onClick={() => { stt.stop(); void finishInterview(history); }}
           className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/85 hover:bg-white/10"
           title="End the interview">
           End interview
