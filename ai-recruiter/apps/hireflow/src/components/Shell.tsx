@@ -200,10 +200,14 @@ function Logo() {
 function NotificationsBell({ role }: { role: "hr" | "candidate" }) {
   const { data: list = [] } = useNotifications({ user_role: role });
   const markRead = useMarkNotificationRead();
+  const navigate = useNavigate();
   const unread = list.filter((n) => !n.read).length;
 
-  const onClick = (id: string, read: boolean) => {
+  const onClick = (id: string, read: boolean, link: string | null | undefined) => {
     if (!read) markRead.mutate(id);
+    if (link) {
+      void navigate({ to: link });
+    }
   };
 
   return (
@@ -231,10 +235,10 @@ function NotificationsBell({ role }: { role: "hr" | "candidate" }) {
           {list.map((n) => (
             <button
               key={n.id}
-              onClick={() => onClick(n.id, n.read)}
+              onClick={() => onClick(n.id, n.read, n.link)}
               className={`block w-full border-b border-border px-4 py-3 text-left transition hover:bg-muted/40 ${
                 n.read ? "opacity-70" : ""
-              }`}
+              } ${n.link ? "cursor-pointer" : ""}`}
             >
               <div className="flex items-start gap-2">
                 {!n.read && (

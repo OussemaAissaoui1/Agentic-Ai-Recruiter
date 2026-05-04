@@ -12,7 +12,7 @@ import {
   useScoringReport,
 } from "@/lib/queries";
 
-export const Route = createFileRoute("/app/applicants/$id/report")({
+export const Route = createFileRoute("/app/applicants_/$id/report")({
   head: ({ params }) => ({
     meta: [{ title: `Report — ${params.id} — HireFlow` }],
   }),
