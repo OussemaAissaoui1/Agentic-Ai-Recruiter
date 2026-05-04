@@ -24,13 +24,13 @@ def compute_averages(turns: list[TurnScore]) -> tuple[float, float]:
 
 
 @dataclass(frozen=True)
-class _Fallback:
+class Fallback:
     recommendation: str
     strengths: list[str]
     concerns: list[str]
 
 
-def build_overall_fallback(tech_avg: float, coh_avg: float) -> _Fallback:
+def build_overall_fallback(tech_avg: float, coh_avg: float) -> Fallback:
     """Deterministic recommendation when the overall LLM pass fails."""
     avg = (tech_avg + coh_avg) / 2.0
     if avg >= 4.25:
@@ -41,7 +41,7 @@ def build_overall_fallback(tech_avg: float, coh_avg: float) -> _Fallback:
         rec = "lean_hire"
     else:
         rec = "no_hire"
-    return _Fallback(
+    return Fallback(
         recommendation=rec,
         strengths=[f"average technical score {tech_avg}/5",
                    f"average coherence score {coh_avg}/5"],
@@ -150,5 +150,9 @@ def write_back_scores(conn: sqlite3.Connection, report: InterviewReport) -> None
             "UPDATE interviews SET scores_json = ? WHERE id = ?",
             (json.dumps(payload), report.interview_id),
         )
+        try:
+            conn.commit()
+        except sqlite3.Error:
+            pass
     except sqlite3.Error:
         pass

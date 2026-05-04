@@ -89,3 +89,37 @@ async def test_empty_transcript_raises():
     ctx["transcript"] = []
     with pytest.raises(ValueError):
         await score_interview(client=None, model="m-1", **ctx)
+
+
+async def test_score_interview_bad_recommendation_falls_back(fake_groq_factory):
+    """LLM returns an invalid recommendation value → deterministic fallback."""
+    replies = [
+        {"technical_score": 4, "technical_rationale": "x",
+         "coherence_score": 4, "coherence_rationale": "x"},
+        {"technical_score": 4, "technical_rationale": "x",
+         "coherence_score": 4, "coherence_rationale": "x"},
+        # Overall pass returns garbage recommendation
+        {"recommendation": "maybe_hire",
+         "summary": "x", "strengths": ["a"], "concerns": ["b"]},
+    ]
+    client = fake_groq_factory(replies)
+    report = await score_interview(client=client, model="m-1", **_ctx())
+    # avg 4.0 → fallback rule says "hire"
+    assert report.overall.recommendation == "hire"
+
+
+async def test_score_interview_malformed_overall_shape_falls_back(fake_groq_factory):
+    """LLM returns non-dict/non-iterable shape on overall → falls back, doesn't crash."""
+    replies = [
+        {"technical_score": 4, "technical_rationale": "x",
+         "coherence_score": 4, "coherence_rationale": "x"},
+        {"technical_score": 4, "technical_rationale": "x",
+         "coherence_score": 4, "coherence_rationale": "x"},
+        # strengths is a non-iterable scalar — used to crash with TypeError
+        {"recommendation": "hire", "summary": "x", "strengths": 42, "concerns": ["b"]},
+    ]
+    client = fake_groq_factory(replies)
+    report = await score_interview(client=client, model="m-1", **_ctx())
+    # Should fall back deterministically — rec from the avg
+    assert report.overall.recommendation in {"strong_hire", "hire", "lean_hire", "no_hire"}
+    assert report.turns[0].technical_score == 4   # per-turn work preserved
