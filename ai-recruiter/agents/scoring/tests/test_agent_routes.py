@@ -207,3 +207,48 @@ def test_health_reports_degraded_without_key(app_with_agent, monkeypatch):
     # a DEGRADED member; either FALLBACK or READY is acceptable depending on
     # whether the agent picked up a Groq client at startup.
     assert r.json()["state"] in ("fallback", "ready")
+
+
+async def test_handle_task_score_interview(app_with_agent):
+    """A2A score_interview capability runs scoring and returns the report dict."""
+    from unittest.mock import patch
+    from core.contracts import A2ATask
+    _app, agent, _state = app_with_agent
+
+    async def fake_score(**kwargs):
+        return _stub_report(kwargs["interview_id"])
+
+    with patch("agents.scoring.agent.score_interview", side_effect=fake_score):
+        task = A2ATask(
+            task_id="t1", target="scoring", capability="score_interview",
+            payload={"interview_id": "int-test", "request": {}},
+        )
+        result = await agent.handle_task(task)
+    assert result.success
+    assert result.result["overall"]["recommendation"] == "hire"
+
+
+async def test_handle_task_get_report_not_found(app_with_agent):
+    """A2A get_report returns success=False with error='not_found' when no cache."""
+    from core.contracts import A2ATask
+    _app, agent, _state = app_with_agent
+    task = A2ATask(
+        task_id="t2", target="scoring", capability="get_report",
+        payload={"interview_id": "int-nope"},
+    )
+    result = await agent.handle_task(task)
+    assert result.success is False
+    assert result.error == "not_found"
+
+
+async def test_handle_task_unknown_capability(app_with_agent):
+    """A2A returns success=False on unknown capability."""
+    from core.contracts import A2ATask
+    _app, agent, _state = app_with_agent
+    task = A2ATask(
+        task_id="t3", target="scoring", capability="invented_thing",
+        payload={"interview_id": "int-test"},
+    )
+    result = await agent.handle_task(task)
+    assert result.success is False
+    assert "unknown capability" in result.error

@@ -68,3 +68,10 @@ def test_inline_override_used_when_db_empty(empty_interview_conn):
     inline = [TranscriptTurn(q="x", a="y")]
     ctx = load_context(empty_interview_conn, "int-empty", inline_override=inline)
     assert ctx.transcript == inline
+
+
+def test_empty_list_inline_override_falls_through_to_db(recruit_conn):
+    """An empty inline_override [] does NOT clobber a populated DB transcript."""
+    ctx = load_context(recruit_conn, "int-test", inline_override=[])
+    # Falls through to DB transcript (3 turns from the seeded fixture)
+    assert len(ctx.transcript) == 3
