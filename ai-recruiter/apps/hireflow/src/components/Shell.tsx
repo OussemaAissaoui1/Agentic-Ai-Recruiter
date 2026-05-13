@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   LayoutDashboard,
   Briefcase,
@@ -7,9 +7,11 @@ import {
   BarChart3,
   Sparkles,
   Search,
+  Settings,
   Sun,
   Moon,
   Bell,
+  Network,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,8 @@ const HR_NAV = [
   { to: "/app/applicants", label: "Applicants", icon: Users },
   { to: "/app/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/app/radar", label: "Talent Radar", icon: Sparkles },
+  { to: "/app/explorer", label: "Graph Explorer", icon: Network },
+  { to: "/app/settings", label: "Settings", icon: Settings },
 ];
 
 export function HRShell() {
@@ -109,29 +113,59 @@ export function HRShell() {
           <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/70 px-6 backdrop-blur-xl">
             <button
               onClick={() => setPaletteOpen(true)}
-              className="group flex w-full max-w-md items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-left text-sm text-muted-foreground transition hover:bg-muted"
+              aria-label="Open command palette (Cmd+K)"
+              className="group flex min-h-[40px] w-full max-w-md items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-left text-sm text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <Search className="h-4 w-4" />
+              <Search className="h-4 w-4" aria-hidden />
               <span className="flex-1">Search candidates, jobs, anything…</span>
               <kbd className="hidden rounded bg-background px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline">
                 ⌘K
               </kbd>
             </button>
             <div className="ml-auto flex items-center gap-1">
-              <Button variant="ghost" size="icon" onClick={() => setCopilotOpen(true)} title="AI Copilot (⌘J)">
-                <Sparkles className="h-4 w-4" />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setCopilotOpen(true)}
+                title="AI Copilot (⌘J)"
+                aria-label="Open AI Copilot"
+              >
+                <Sparkles className="h-4 w-4" aria-hidden />
               </Button>
               <NotificationsBell role="hr" />
-              <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                title="Toggle theme"
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4" aria-hidden />
+                ) : (
+                  <Moon className="h-4 w-4" aria-hidden />
+                )}
               </Button>
-              <div className="ml-2 hidden h-8 w-8 items-center justify-center rounded-full bg-violet-grad text-xs font-semibold text-accent-foreground md:flex">
-                NB
+              <div
+                className="ml-2 hidden h-8 w-8 items-center justify-center rounded-full bg-violet-grad text-xs font-semibold text-accent-foreground md:flex"
+                aria-hidden
+              >
+                <Users className="h-4 w-4" />
               </div>
             </div>
           </header>
-          <main className="px-6 py-8">
-            <Outlet />
+          <main className="mx-auto max-w-[1400px] px-6 py-8">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={loc.pathname}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+              >
+                <Outlet />
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>
@@ -144,6 +178,7 @@ export function HRShell() {
 export function CandidateShell() {
   const { theme, toggleTheme, role } = useApp();
   const nav = useNavigate();
+  const cloc = useLocation();
   useEffect(() => {
     if (role === "hr") nav({ to: "/app" });
   }, [role, nav]);
@@ -156,7 +191,7 @@ export function CandidateShell() {
     <div className="min-h-screen bg-background text-foreground">
       <div className="fixed inset-0 -z-10 bg-aurora opacity-50" aria-hidden />
       <header className="sticky top-0 z-30 border-b border-border bg-background/70 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-6">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-6 px-6">
           <Logo />
           <nav className="ml-4 hidden items-center gap-4 text-sm md:flex">
             <Link to="/c" className="text-foreground hover:text-accent" activeOptions={{ exact: true }}>
@@ -171,15 +206,35 @@ export function CandidateShell() {
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <NotificationsBell role="candidate" />
-            <Button variant="ghost" size="icon" onClick={toggleTheme}>
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              title="Toggle theme"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" aria-hidden />
+              ) : (
+                <Moon className="h-4 w-4" aria-hidden />
+              )}
             </Button>
             <RoleSwitcher compact />
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <Outlet />
+      <main className="mx-auto w-full max-w-7xl px-6 py-10">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={cloc.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+          >
+            <Outlet />
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   );
@@ -187,11 +242,15 @@ export function CandidateShell() {
 
 function Logo() {
   return (
-    <Link to="/" className="flex items-center gap-2">
-      <div className="relative grid h-7 w-7 place-items-center overflow-hidden rounded-lg bg-ink">
-        <div className="absolute inset-0 bg-violet-grad opacity-80" />
-        <span className="relative font-display text-sm font-semibold text-white">H</span>
-      </div>
+    <Link to="/" className="flex items-center gap-2" aria-label="HireFlow home">
+      <img
+        src="/logo-mark.png"
+        alt=""
+        width={28}
+        height={28}
+        className="h-7 w-7 select-none object-contain"
+        draggable={false}
+      />
       <span className="font-display text-lg tracking-tight">HireFlow</span>
     </Link>
   );
@@ -213,10 +272,23 @@ function NotificationsBell({ role }: { role: "hr" | "candidate" }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" title="Notifications" className="relative">
-          <Bell className="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Notifications"
+          aria-label={
+            unread > 0
+              ? `Notifications (${unread} unread)`
+              : "Notifications"
+          }
+          className="relative"
+        >
+          <Bell className="h-4 w-4" aria-hidden />
           {unread > 0 && (
-            <span className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[9px] font-semibold text-accent-foreground">
+            <span
+              className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[9px] font-semibold text-accent-foreground"
+              aria-hidden
+            >
               {unread > 9 ? "9+" : unread}
             </span>
           )}
