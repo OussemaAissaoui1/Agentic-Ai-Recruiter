@@ -85,14 +85,21 @@ class Neo4jClient:
         Returns the server's `RETURN 1 AS ok` plus the database name. Raises
         on failure — callers wrap in try/except to surface health state.
         """
-        with self._driver.session(database=self._cfg.database) as session:
+        with self.session() as session:
             record = session.run("RETURN 1 AS ok").single()
         return {"ok": record["ok"] if record else None, "database": self._cfg.database}
 
     @contextmanager
     def session(self) -> Iterator[Session]:
-        with self._driver.session(database=self._cfg.database) as s:
-            yield s
+        # When database is None the driver uses the user's home database
+        # (Aura-friendly when the database name isn't predictable from the
+        # instance id).
+        if self._cfg.database:
+            with self._driver.session(database=self._cfg.database) as s:
+                yield s
+        else:
+            with self._driver.session() as s:
+                yield s
 
     def read(self, cypher: str, **params: Any) -> List[Dict[str, Any]]:
         """Run a read-only query and return list of records as dicts."""

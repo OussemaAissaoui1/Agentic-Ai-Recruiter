@@ -19,7 +19,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -431,7 +431,7 @@ def seed(clear: bool = False, quiet: bool = False) -> Dict[str, Any]:
     edge_counts = _seed_edges(client, payload)
 
     summary = {
-        "started_at":  datetime.utcnow().isoformat() + "Z",
+        "started_at":  datetime.now(timezone.utc).isoformat(),
         "schema":      schema_summary,
         "nodes":       node_counts,
         "edges":       edge_counts,

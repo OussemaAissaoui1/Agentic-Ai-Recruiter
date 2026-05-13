@@ -232,7 +232,8 @@ async def run_generation(
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": json.dumps(
-                            tool_res.data if tool_res.ok else {"error": tool_res.error}
+                            _compact_tool_result(tc.name, tool_res.data)
+                            if tool_res.ok else {"error": tool_res.error}
                         ),
                     })
                 continue
@@ -446,6 +447,93 @@ def _summarize(tool: str, data: Dict[str, Any]) -> str:
     if tool == "cypher_query":
         return f"{data.get('row_count', 0)} rows"
     return str(data)[:120]
+
+
+def _compact_tool_result(tool: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Trim a tool result before re-sending it in the model's context.
+
+    Groq's free-tier TPM is tight; full skill_distribution payloads (294 skills
+    × 4 fields) can blow the budget after one or two turns. We keep the
+    salient signal (names, frequencies, top entries) and drop secondary fields
+    plus over-long tails.
+
+    The TRUE result still gets logged into tool_call_log for the evidence
+    panel — only the message-history copy is trimmed.
+    """
+    if not isinstance(data, dict):
+        return data
+    if tool == "get_skill_distribution":
+        def _slim(rows: List[Dict[str, Any]], k: int) -> List[Dict[str, Any]]:
+            return [{"name": r.get("name"), "frequency": r.get("frequency")}
+                    for r in rows[:k]]
+        return {
+            "cohort_size": data.get("cohort_size"),
+            "universal":   _slim(data.get("universal", []),   10),
+            "distinctive": _slim(data.get("distinctive", []), 12),
+            "long_tail":   _slim(data.get("long_tail", []),    8),
+        }
+    if tool == "get_cohort":
+        return {
+            "role_family": data.get("role_family"),
+            "level":       data.get("level"),
+            "size":        data.get("size"),
+            "employee_ids": data.get("employee_ids", [])[:20],
+        }
+    if tool == "get_career_paths_into":
+        return {
+            "role_family": data.get("role_family"),
+            "paths":       data.get("paths", [])[:5],
+            "immediate_predecessors": data.get("immediate_predecessors", [])[:6],
+        }
+    if tool == "get_education_distribution":
+        return {
+            "cohort_size":     data.get("cohort_size"),
+            "by_field":        data.get("by_field", [])[:6],
+            "by_degree":       data.get("by_degree", [])[:6],
+            "self_taught_pct": data.get("self_taught_pct"),
+        }
+    if tool == "get_prior_industries":
+        return {
+            "cohort_size":    data.get("cohort_size"),
+            "by_industry":    data.get("by_industry", [])[:6],
+            "by_size_bucket": data.get("by_size_bucket", []),
+        }
+    if tool == "get_past_jds":
+        return {
+            "role_family": data.get("role_family"),
+            "outcome":     data.get("outcome"),
+            "jds": [
+                {"id": j.get("id"), "text": (j.get("text") or "")[:500]}
+                for j in data.get("jds", [])[:3]
+            ],
+        }
+    if tool == "get_past_rejections":
+        # Past-rejection reasons are load-bearing — keep them, just trim the
+        # JD snippet that contextualizes each.
+        return {
+            "role_family": data.get("role_family"),
+            "count":       data.get("count"),
+            "reasons": [
+                {
+                    "reason":     r.get("reason"),
+                    "categories": r.get("categories"),
+                    "jd_snippet": (r.get("jd_snippet") or "")[:220],
+                }
+                for r in data.get("reasons", [])
+            ],
+        }
+    if tool == "get_team_signals":
+        return {
+            "team_id":   data.get("team_id"),
+            "name":      data.get("name"),
+            "size":      data.get("size"),
+            "by_level":  data.get("by_level"),
+            "by_family": data.get("by_family"),
+        }
+    if tool == "cypher_query":
+        rows = data.get("rows", [])[:20]
+        return {"ok": data.get("ok"), "row_count": data.get("row_count"), "rows": rows}
+    return data
 
 
 def _extract_node_ids(tool: str, data: Dict[str, Any]) -> List[str]:

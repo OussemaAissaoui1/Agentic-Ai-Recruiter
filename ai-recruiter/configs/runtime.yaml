@@ -67,7 +67,9 @@ jd_generation:
     uri_env: JD_NEO4J_URI
     user_env: JD_NEO4J_USER
     password_env: JD_NEO4J_PASSWORD
-    database: neo4j
+    database_env: JD_NEO4J_DATABASE
+    # database: defaults to the user's home database when unset (Aura-friendly).
+    # Set explicitly only for multi-database instances.
     connection_timeout_s: 5
 
   llm:
