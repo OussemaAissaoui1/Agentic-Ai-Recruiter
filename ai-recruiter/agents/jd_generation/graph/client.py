@@ -17,14 +17,34 @@ from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Optional
 
 from neo4j import Driver, GraphDatabase, ManagedTransaction, Result, Session
+from neo4j.exceptions import ConfigurationError as Neo4jDriverConfigurationError
 
 from agents.jd_generation.config import JDConfig, Neo4jConfig, load_jd_config
 
 log = logging.getLogger("agents.jd_generation.graph")
 
+# Schemes the neo4j driver accepts. Keep in sync with neo4j-python's parser.
+_VALID_URI_SCHEMES = (
+    "bolt://", "bolt+s://", "bolt+ssc://",
+    "neo4j://", "neo4j+s://", "neo4j+ssc://",
+)
+
 
 class Neo4jNotConfigured(RuntimeError):
-    """Raised when graph operations are attempted but env vars are missing."""
+    """Raised when graph operations are attempted but env vars are missing
+    or malformed (e.g. URI missing its scheme)."""
+
+
+def _validate_uri(uri: str) -> None:
+    """Raise a helpful error if the URI is missing its scheme."""
+    if not any(uri.startswith(scheme) for scheme in _VALID_URI_SCHEMES):
+        # Mask anything after a '@' just in case credentials were inlined.
+        sanitized = uri.split("@", 1)[-1] if "@" in uri else uri
+        raise Neo4jNotConfigured(
+            f"JD_NEO4J_URI is missing or malformed: got {sanitized!r}. "
+            f"Expected one of: {', '.join(_VALID_URI_SCHEMES)}. "
+            f"Example for AuraDB: neo4j+s://xxxxxxxx.databases.neo4j.io"
+        )
 
 
 class Neo4jClient:
@@ -35,12 +55,18 @@ class Neo4jClient:
             raise Neo4jNotConfigured(
                 "JD_NEO4J_URI / JD_NEO4J_USER / JD_NEO4J_PASSWORD must be set"
             )
+        _validate_uri(cfg.uri or "")
         self._cfg = cfg
-        self._driver: Driver = GraphDatabase.driver(
-            cfg.uri,
-            auth=(cfg.user, cfg.password),
-            connection_timeout=cfg.connection_timeout_s,
-        )
+        try:
+            self._driver: Driver = GraphDatabase.driver(
+                cfg.uri,
+                auth=(cfg.user, cfg.password),
+                connection_timeout=cfg.connection_timeout_s,
+            )
+        except Neo4jDriverConfigurationError as e:
+            # Re-wrap so callers (seed CLI, agent startup) see a consistent
+            # exception type with a friendly message.
+            raise Neo4jNotConfigured(f"neo4j driver rejected URI: {e}") from e
         log.info("neo4j driver opened uri=%s db=%s", cfg.uri, cfg.database)
 
     @property
