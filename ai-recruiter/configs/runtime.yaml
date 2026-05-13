@@ -26,6 +26,7 @@ agents:
     - voice           # ASR/prosody only — stub today
     - scoring
     - orchestrator
+    - jd_generation   # cheap; Neo4j driver lazy, no model load
     - nlp             # last; vLLM stays lazy until /api/nlp/warmup
 
 paths:
@@ -58,3 +59,35 @@ nlp:
   # history; 8192 is the safe default. Override per-deployment with the
   # NLP_MAX_MODEL_LEN env var.
   max_model_len: 8192
+
+jd_generation:
+  # Neo4j connection comes entirely from env vars — see .env.example.
+  # The agent's startup() will mark itself as ERROR if these are missing.
+  neo4j:
+    uri_env: JD_NEO4J_URI
+    user_env: JD_NEO4J_USER
+    password_env: JD_NEO4J_PASSWORD
+    database: neo4j
+    connection_timeout_s: 5
+
+  llm:
+    backend: groq
+    model: llama-3.3-70b-versatile
+    api_key_env: GROQ_API_KEY
+    temperature_synthesis: 0.7
+    temperature_tool_select: 0.0
+    request_timeout_s: 60
+
+  agent:
+    max_tool_calls: 15
+    max_revisions: 3
+    rejection_lookback: 10
+    # Hardcoded preambles bypass the model's tool-choice — these always fire
+    # before the model takes over. See runtime/runner.py.
+    deterministic_preambles: ["find_role_family", "get_past_rejections"]
+
+  upload:
+    max_file_size_mb: 20
+    allowed_extensions: ["json", "csv", "zip"]
+    # When set, refuse `replace` mode to prevent wiping a production-like graph.
+    prod_guard_env: JD_PROD_GUARD
