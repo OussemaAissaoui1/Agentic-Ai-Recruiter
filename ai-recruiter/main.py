@@ -44,6 +44,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agents.avatar import AvatarAgentAdapter
+from agents.jd_generation import JDGenerationAgent
 from agents.matching import MatchingAgent
 from agents.nlp.agent_adapter import NLPAgentAdapter
 from agents.orchestrator import OrchestratorAgent
@@ -77,6 +78,7 @@ registry.register(ScoringAgent())
 registry.register(VoiceAgent())
 registry.register(OrchestratorAgent())
 registry.register(RecruitAgent())
+registry.register(JDGenerationAgent())
 
 lifespan = build_lifespan(
     registry,

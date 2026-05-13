@@ -1,0 +1,60 @@
+{
+  "name": "jd",
+  "version": "0.1.0",
+  "description": "Graph-RAG JD generator backed by Neo4j + Groq. Produces a job description with evidence panel and a rejection-feedback loop. Coexists with the simpler agents/recruit/jd_gen.py.",
+  "capabilities": [
+    {
+      "name": "generate_jd",
+      "description": "Generate a JD via graph-RAG over the employee graph. Streams tool-call progress over SSE.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "role_title": {"type": "string"},
+          "level": {"type": "string", "enum": ["junior", "mid", "senior"]},
+          "team_id": {"type": "string"}
+        },
+        "required": ["role_title", "level"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "jd_id": {"type": "string"},
+          "jd_text": {"type": "string"},
+          "must_have": {"type": "array", "items": {"type": "string"}},
+          "nice_to_have": {"type": "array", "items": {"type": "string"}},
+          "evidence": {"type": "object"},
+          "rejection_checks": {"type": "array"},
+          "tool_call_log": {"type": "array"},
+          "bias_warnings": {"type": "array"}
+        }
+      }
+    },
+    {
+      "name": "reject_jd",
+      "description": "Persist a recruiter rejection. Free-text reasons are classified into a 7-item taxonomy."
+    },
+    {
+      "name": "approve_jd",
+      "description": "Mark a draft JD as approved."
+    },
+    {
+      "name": "dump_graph",
+      "description": "D3-shaped JSON dump of the JD graph for visualization."
+    },
+    {
+      "name": "upload_graph",
+      "description": "Replace or augment the JD graph from a JSON or CSV-zip-bundle upload."
+    }
+  ],
+  "routes": [
+    "/api/jd/health",
+    "/api/jd/generate",
+    "/api/jd/{jd_id}",
+    "/api/jd/{jd_id}/approve",
+    "/api/jd/{jd_id}/reject",
+    "/api/jd/graph/dump",
+    "/api/jd/graph/upload",
+    "/api/jd/graph/seed-default"
+  ],
+  "transports": ["http"]
+}
