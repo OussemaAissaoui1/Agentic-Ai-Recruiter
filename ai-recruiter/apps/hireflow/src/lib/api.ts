@@ -333,6 +333,7 @@ export const interviews = {
       application_id: string;
       status?: string;
       transcript?: InterviewTurn[];
+      behavioral?: Record<string, unknown> | null;
       started_at?: number;
       ended_at?: number;
     },
@@ -382,6 +383,60 @@ export const scoring = {
     request<{ deleted: boolean }>(
       `/api/scoring/${encodeURIComponent(interview_id)}/report`,
       { method: "DELETE", signal: opts?.signal },
+    ),
+};
+
+// ─── Recruiter taste ─────────────────────────────────────────────────────────
+export type RecruiterTasteConfidence = "cold" | "warming" | "warm";
+
+export type RecruiterFactorWeight = { label: string; weight: number };
+
+export type RecruiterFactorContribution = {
+  label: string;
+  contribution: number;
+};
+
+export type RecruiterTasteProfile = {
+  recruiter_id: string;
+  n_decisions: number;
+  confidence: RecruiterTasteConfidence;
+  version: number;
+  updated_at: number | null;
+  top_positive: RecruiterFactorWeight[];
+  top_negative: RecruiterFactorWeight[];
+};
+
+export type RecruiterFitScore = {
+  application_id: string;
+  recruiter_id: string;
+  score: number;                                  // sigmoid in [0, 1]
+  confidence: RecruiterTasteConfidence;
+  top_positive: RecruiterFactorContribution[];
+  top_negative: RecruiterFactorContribution[];
+};
+
+export const taste = {
+  profile: (opts?: FetchOpts) =>
+    request<RecruiterTasteProfile>("/api/recruit/taste/me/profile", {
+      signal: opts?.signal,
+    }),
+
+  score: (application_id: string, opts?: FetchOpts) =>
+    request<RecruiterFitScore>(
+      `/api/recruit/taste/score/${encodeURIComponent(application_id)}`,
+      { signal: opts?.signal },
+    ),
+
+  refit: (opts?: FetchOpts) =>
+    request<RecruiterTasteProfile>("/api/recruit/taste/me/refit", {
+      method: "POST",
+      signal: opts?.signal,
+    }),
+
+  reset: (opts?: FetchOpts) =>
+    request<{ recruiter_id: string; reset: boolean }>(
+      "/api/recruit/taste/me/reset",
+      { method: "POST", signal: opts?.signal },
     ),
 };
 
@@ -586,15 +641,176 @@ function parseSSEEvent(raw: string): unknown | null {
   }
 }
 
+// ─── JD Generation (graph-RAG agent at /api/jd/*) ────────────────────────────
+export type JDLevel = "junior" | "mid" | "senior";
+
+export type JDGraphNode = {
+  id: string;
+  type: "employee" | "role" | "skill" | "team" | "education" | "prior_company"
+      | "job_description" | "rejection";
+  label: string;
+  props?: Record<string, unknown>;
+  // populated client-side for the tool-call halo animation
+  highlight?: boolean;
+};
+
+export type JDGraphLink = {
+  source: string | JDGraphNode;
+  target: string | JDGraphNode;
+  type: string;
+  [k: string]: unknown;
+};
+
+export type JDGraphDump = {
+  nodes: JDGraphNode[];
+  links: JDGraphLink[];
+  node_count: number;
+  link_count: number;
+  filter: Record<string, string>;
+};
+
+export type JDRejectionCheck = {
+  past_reason: string;
+  how_addressed: string;
+  categories: string[];
+};
+
+export type JDToolCall = {
+  tool: string;
+  ok: boolean;
+  data?: Record<string, unknown>;
+};
+
+export type JDGenerateResult = {
+  jd_id: string;
+  role_family: string;
+  level: JDLevel;
+  team_id: string | null;
+  jd_text: string;
+  must_have: string[];
+  nice_to_have: string[];
+  evidence: Record<string, unknown>;
+  rejection_checks: JDRejectionCheck[];
+  tool_call_log: JDToolCall[];
+  bias_warnings: { category: string; term: string; snippet: string }[];
+  created_at: string;
+};
+
+export type JDStreamEvent =
+  | { type: "tool_call"; tool: string; args: Record<string, unknown> }
+  | { type: "tool_result"; tool: string; ok: boolean; summary?: string;
+      node_ids?: string[] }
+  | { type: "final"; jd_id: string }
+  | { type: "final_full"; result: JDGenerateResult }
+  | { type: "error"; error: string }
+  | { type: "done" };
+
+export const jdGen = {
+  health: (opts?: FetchOpts) =>
+    request<Record<string, unknown>>("/api/jd/health", { signal: opts?.signal }),
+
+  dump: (
+    params: { filter?: string; include_rejections?: boolean } = {},
+    opts?: FetchOpts,
+  ) => request<JDGraphDump>(`/api/jd/graph/dump${qs(params)}`, { signal: opts?.signal }),
+
+  seedDefault: (opts?: FetchOpts) =>
+    request<{ ok: boolean; summary: Record<string, unknown> }>(
+      "/api/jd/graph/seed-default",
+      { method: "POST", signal: opts?.signal },
+    ),
+
+  upload: (file: File, mode: "augment" | "replace", opts?: FetchOpts) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("mode", mode);
+    return request<{ ok: boolean; mode: string; counts: Record<string, number>;
+                     nodes: Record<string, number>; edges: Record<string, number>;
+                     warnings: string[] }>(
+      "/api/jd/graph/upload",
+      { method: "POST", body: fd, signal: opts?.signal },
+    );
+  },
+
+  get: (jdId: string, opts?: FetchOpts) =>
+    request<Record<string, unknown>>(`/api/jd/${encodeURIComponent(jdId)}`, { signal: opts?.signal }),
+
+  approve: (jdId: string, opts?: FetchOpts) =>
+    request<{ ok: boolean; jd_id: string }>(
+      `/api/jd/${encodeURIComponent(jdId)}/approve`,
+      { method: "POST", signal: opts?.signal },
+    ),
+
+  reject: (
+    jdId: string,
+    body: { reason_text: string; categories?: string[] },
+    opts?: FetchOpts,
+  ) =>
+    request<{ ok: boolean; jd_id: string; reason_id: string }>(
+      `/api/jd/${encodeURIComponent(jdId)}/reject`,
+      { method: "POST", body: JSON.stringify(body), signal: opts?.signal },
+    ),
+
+  // Non-streaming generation. For streaming, use generateStream below.
+  generate: (
+    body: { role_title: string; level: JDLevel; team_id?: string | null },
+    opts?: FetchOpts,
+  ) =>
+    request<JDGenerateResult>(
+      "/api/jd/generate",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...body, stream: false }),
+        signal: opts?.signal,
+      },
+    ),
+
+  // Streaming generation via SSE. Returns an async iterator of events.
+  async *generateStream(
+    body: { role_title: string; level: JDLevel; team_id?: string | null },
+    opts?: FetchOpts,
+  ): AsyncGenerator<JDStreamEvent> {
+    const res = await fetch("/api/jd/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, stream: true }),
+      signal: opts?.signal,
+    });
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new ApiError(res.status, text || `HTTP ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const event = parseSSEEvent(chunk);
+        if (event && typeof event === "object" && "type" in event) {
+          yield event as JDStreamEvent;
+        }
+      }
+    }
+  },
+};
+
 export const api = {
   health,
   jobs,
   applications,
   interviews,
   scoring,
+  taste,
   notifications,
   matching,
   nlp,
   vision,
   transcribe,
+  jdGen,
 };
