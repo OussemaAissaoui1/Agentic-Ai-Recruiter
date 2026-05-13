@@ -164,7 +164,7 @@ class GroqClient:
             raise GroqError(f"non-json content from groq: {exc}") from exc
 
     # -----------------------------------------------------------------------
-    # Internal: POST with retry on 5xx / timeout. 4xx never retries.
+    # Internal: POST with retry on 5xx / timeout / 429. Other 4xx never retry.
     # -----------------------------------------------------------------------
     async def _post_with_retry(
         self,
@@ -177,8 +177,12 @@ class GroqClient:
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type":  "application/json",
         }
+        # 429s get extra retry budget because Groq's TPM window slides over a
+        # minute — a single sleep usually lets us through.
+        rate_limit_retries_left = 3
+        attempt = 0
         last_exc: Optional[Exception] = None
-        for attempt in range(max_retries + 1):
+        while True:
             try:
                 resp = await self._client.post(
                     GROQ_URL, json=payload, headers=headers, timeout=timeout,
@@ -190,6 +194,18 @@ class GroqClient:
                         f"timeout after {max_retries + 1} attempts: {exc}"
                     ) from exc
                 await asyncio.sleep(0.5 * (2 ** attempt))
+                attempt += 1
+                continue
+
+            if resp.status_code == 429:
+                # Rate-limited. Use the server's Retry-After hint when present,
+                # else default to enough to clear the TPM window.
+                if rate_limit_retries_left <= 0:
+                    raise GroqError(f"groq 429 after retries: {resp.text[:200]}")
+                wait_s = _parse_retry_after(resp.headers, default=20.0)
+                log.warning("groq 429 — sleeping %.1fs before retry", wait_s)
+                await asyncio.sleep(wait_s)
+                rate_limit_retries_left -= 1
                 continue
 
             if resp.status_code >= 500:
@@ -197,10 +213,11 @@ class GroqClient:
                 if attempt >= max_retries:
                     raise last_exc
                 await asyncio.sleep(0.5 * (2 ** attempt))
+                attempt += 1
                 continue
 
             if resp.status_code >= 400:
-                # 4xx never retries
+                # Other 4xx (auth, bad request) never retry
                 raise GroqError(f"groq {resp.status_code}: {resp.text[:200]}")
 
             try:
@@ -208,7 +225,23 @@ class GroqClient:
             except json.JSONDecodeError as exc:
                 raise GroqError(f"non-json wire response: {exc}") from exc
 
-        raise GroqError(f"unreachable: {last_exc}")
+
+def _parse_retry_after(headers: httpx.Headers, default: float) -> float:
+    """Groq returns either Retry-After (seconds or HTTP-date) or
+    x-ratelimit-reset-tokens. Honor either. Cap at 60s."""
+    ra = headers.get("retry-after")
+    if ra:
+        try:
+            return min(60.0, max(1.0, float(ra)))
+        except ValueError:
+            pass
+    reset = headers.get("x-ratelimit-reset-tokens") or headers.get("x-ratelimit-reset")
+    if reset:
+        try:
+            return min(60.0, max(1.0, float(reset)))
+        except ValueError:
+            pass
+    return default
 
 
 # ---------------------------------------------------------------------------

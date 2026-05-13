@@ -23,7 +23,7 @@ class Neo4jConfig:
     uri: Optional[str]
     user: Optional[str]
     password: Optional[str]
-    database: str
+    database: Optional[str]   # None => use the user's home database
     connection_timeout_s: float
 
     @property
@@ -79,18 +79,28 @@ def load_jd_config() -> JDConfig:
     block: Dict[str, Any] = raw.get("jd_generation", {})
 
     neo4j_block = block.get("neo4j", {})
+    # JD_NEO4J_DATABASE env var overrides the runtime.yaml default.
+    # Setting it to "" or unset means "use the user's home database" — useful
+    # for Aura instances where the database name isn't predictable from the
+    # instance id.
+    database_env = neo4j_block.get("database_env", "JD_NEO4J_DATABASE")
+    database = os.environ.get(database_env) or neo4j_block.get("database") or None
     neo4j = Neo4jConfig(
         uri=os.environ.get(neo4j_block.get("uri_env", "JD_NEO4J_URI")) or None,
         user=os.environ.get(neo4j_block.get("user_env", "JD_NEO4J_USER")) or None,
         password=os.environ.get(neo4j_block.get("password_env", "JD_NEO4J_PASSWORD")) or None,
-        database=neo4j_block.get("database", "neo4j"),
+        database=database,
         connection_timeout_s=float(neo4j_block.get("connection_timeout_s", 5)),
     )
 
     llm_block = block.get("llm", {})
+    # JD_LLM_MODEL overrides the yaml default — handy for falling back to a
+    # smaller model under TPM pressure or for A/B comparisons without editing
+    # the config file.
+    model = os.environ.get("JD_LLM_MODEL") or llm_block.get("model", "llama-3.3-70b-versatile")
     llm = LLMConfig(
         backend=llm_block.get("backend", "groq"),
-        model=llm_block.get("model", "llama-3.3-70b-versatile"),
+        model=model,
         api_key=os.environ.get(llm_block.get("api_key_env", "GROQ_API_KEY")) or None,
         temperature_synthesis=float(llm_block.get("temperature_synthesis", 0.7)),
         temperature_tool_select=float(llm_block.get("temperature_tool_select", 0.0)),
