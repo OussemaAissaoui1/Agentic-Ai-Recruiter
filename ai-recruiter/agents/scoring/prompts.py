@@ -5,6 +5,8 @@ specific — the JSON shape is the contract; the wording can be tuned.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from .schema import TranscriptTurn, TurnScore
 
 
@@ -96,6 +98,7 @@ def overall_prompt(
     cv_text: str,
     transcript: list[TranscriptTurn],
     per_turn: list[TurnScore],
+    behavior_summary: Optional[dict] = None,
 ) -> tuple[str, str]:
     transcript_block = "\n\n".join(
         f"Turn {i}\nQ: {t.q}\nA: {t.a}" for i, t in enumerate(transcript)
@@ -106,6 +109,8 @@ def overall_prompt(
         f" | coherence={s.coherence_score} ({s.coherence_rationale})"
         for s in per_turn
     ) or "(no per-turn scores)"
+
+    behavior_block = _render_behavior_block(behavior_summary)
 
     user = f"""Role: {job_title or "(unspecified)"}
 
@@ -120,7 +125,7 @@ Transcript:
 
 Per-turn scoring already produced:
 {scores_block}
-
+{behavior_block}
 Produce a hiring recommendation. Pick exactly one value for "recommendation"
 from: "strong_hire", "hire", "lean_hire", "no_hire".
 
@@ -137,5 +142,82 @@ Calibration:
   - hire: solid match; minor reservations
   - lean_hire: split signal; would need a second opinion
   - no_hire: insufficient evidence, fabrications, or major concerns
+
+Treat behavioral signals as advisory only: they refine but never override
+technical correctness. Low engagement/confidence on its own is not grounds
+for rejection if technical answers are strong.
 """
     return _OVERALL_SYSTEM, user
+
+def _render_behavior_block(summary: Optional[dict]) -> str:
+    """Render the camera/voice session summary into a compact prompt block.
+
+    Returns an empty string if no summary is available so the prompt stays
+    clean. Voice signals are included only when the audio detector produced
+    data; otherwise we explicitly say "voice analysis: not available" so the
+    LLM doesn't hallucinate vocal observations.
+    """
+    if not summary or not isinstance(summary, dict):
+        return ""
+    
+    per_dim = summary.get("per_dimension") or {}
+    if not per_dim and not summary.get("notable_moments"):
+        return ""
+
+    def _fmt(dim: str) -> str:
+        d = per_dim.get(dim) or {}
+        if not d:
+            return f"{dim}: n/a"
+        return (
+            f"{dim}: mean={d.get('mean', 'n/a')} "
+            f"std={d.get('std', 'n/a')} "
+            f"range=[{d.get('min', 'n/a')},{d.get('max', 'n/a')}] "
+            f"trend={d.get('trend', 'n/a')}"
+        )
+
+    notable = summary.get("notable_moments") or []
+    notable_lines = [
+        f"  - {m.get('dimension', 'unknown')}: magnitude {m.get('magnitude', 0):.2f}"
+        for m in notable[:6]
+    ]
+    notable_block = "\n".join(notable_lines) if notable_lines else "  (none)"
+
+    qb = summary.get("question_breakdowns") or {}
+    qb_lines = []
+    for label, vals in list(qb.items())[:6]:
+        qb_lines.append(
+            f"  - \"{label[:80]}\": engagement={vals.get('engagement_level', 'n/a')} "
+            f"confidence={vals.get('confidence_level', 'n/a')} "
+            f"cognitive_load={vals.get('cognitive_load', 'n/a')}"
+        )
+    qb_block = "\n".join(qb_lines) if qb_lines else "  (no per-question breakdown)"
+
+    modalities = []
+    # The aggregator does not expose modalities at the summary level, so we
+    # infer presence from the dimension data + any audio_stress_prob slot.
+    if per_dim:
+        modalities.append("vision")
+    audio_present = any(
+        ("audio" in str(m.get("dimension", "")).lower())
+        for m in notable
+    )
+    voice_line = "voice analysis: present" if audio_present else "voice analysis: not available (audio not routed to vision pipeline)"
+
+    return f"""
+
+Behavioral signals (camera/voice during the live interview):
+- duration_seconds: {summary.get('duration_seconds', 'n/a')}
+- baseline_calibrated: {summary.get('baseline_calibrated', False)}
+- frames_analyzed: {summary.get('frames_analyzed', 0)}
+- overall_arc: {summary.get('overall_arc', 'n/a')}
+- {voice_line}
+- per-dimension stats (0..1 scale; cognitive_load = stress proxy):
+  - {_fmt('engagement_level')}
+  - {_fmt('confidence_level')}
+  - {_fmt('cognitive_load')}
+  - {_fmt('emotional_arousal')}
+- notable moments (>=2σ deviation):
+{notable_block}
+- per-question breakdowns:
+{qb_block}
+"""

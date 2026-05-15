@@ -21,6 +21,9 @@ class InterviewContext:
     cv_text: str
     jd_text: str
     transcript: list[TranscriptTurn]
+    # Vision/voice session summary captured during the live interview by
+    # the vision agent's aggregator. Empty dict when not available.
+    behavior_summary: dict
 
 
 def load_context(
@@ -28,7 +31,7 @@ def load_context(
     interview_id: str,
     inline_override: Optional[list[TranscriptTurn]] = None,
 ) -> InterviewContext:
-    """Read (transcript, CV, JD) for an interview.
+    """Read (transcript, CV, JD, behavior_summary) for an interview.
 
     Raises LookupError if the interview row is not found. If
     *inline_override* is given, it replaces whatever transcript is on disk.
@@ -37,6 +40,7 @@ def load_context(
         """
         SELECT i.id              AS interview_id,
                i.transcript_json AS transcript_json,
+               i.behavioral_json AS behavioral_json,
                a.candidate_name  AS candidate_name,
                a.cv_text         AS cv_text,
                j.title           AS job_title,
@@ -64,7 +68,18 @@ def load_context(
         cv_text=row["cv_text"] or "",
         jd_text=row["jd_text"] or "",
         transcript=transcript,
+        behavior_summary=_parse_behavior(row["behavioral_json"]),
     )
+
+
+def _parse_behavior(raw: Optional[str]) -> dict:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _parse_transcript(raw: Optional[str]) -> list[TranscriptTurn]:

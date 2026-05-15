@@ -5,8 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import mimetypes
 import os
+import re
 import tempfile
+import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import (
@@ -14,17 +18,45 @@ from fastapi import (
     Body,
     File,
     Form,
+    Header,
     HTTPException,
     Query,
     UploadFile,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+
+from configs import resolve as resolve_path
 
 from . import db as recruit_db
 from .jd_gen import JDInputs, stream_jd
+from .taste.capture import DEFAULT_RECRUITER_ID, capture_decision
+
+# Persistent CV storage. The original file the candidate uploaded lives
+# here so the recruiter can preview the source PDF/DOCX/image — not the
+# OCR'd text.
+CV_STORE = Path(resolve_path("artifacts/cvs"))
+CV_STORE.mkdir(parents=True, exist_ok=True)
+
+
+def _safe_filename_part(name: str) -> str:
+    """Strip path separators + collapse weird chars so we never escape CV_STORE."""
+    name = os.path.basename(name or "")
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return name[:80] or "cv"
 
 log = logging.getLogger("agents.recruit")
+
+
+def _resolve_recruiter_id(header_value: Optional[str]) -> str:
+    """Map the X-Recruiter-Id request header to a recruiter_id string.
+
+    No auth in this codebase yet — the header is the simplest forward-
+    compatible identity surface. If unset, fall back to the singleton
+    "hr-default" so the POC works out-of-the-box for a one-recruiter
+    install.
+    """
+    return header_value.strip() if header_value and header_value.strip() else DEFAULT_RECRUITER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -242,16 +274,32 @@ def build_router(agent) -> APIRouter:
         if job is None:
             raise HTTPException(404, f"job not found: {job_id}")
 
+        # Pre-generate the application id so we can name the persisted CV
+        # deterministically — the GET /applications/{id}/cv route uses it.
+        aid = f"app-{uuid.uuid4().hex[:12]}"
+
         cv_text = ""
-        cv_filename = None
+        cv_filename: Optional[str] = None
+        cv_path: Optional[str] = None
         if cv is not None and cv.filename:
             cv_filename = cv.filename
+            cv_bytes = await cv.read()
+            # Persist the original file to artifacts/cvs/{aid}__{safe_name}.
+            safe_name = _safe_filename_part(cv.filename)
+            persisted = CV_STORE / f"{aid}__{safe_name}"
+            try:
+                persisted.write_bytes(cv_bytes)
+                cv_path = str(persisted)
+            except Exception as e:
+                log.warning("cv persist failed for %s: %s", cv.filename, e)
+                cv_path = None
+            # OCR / text extraction for matching + scoring downstream.
             try:
                 from agents.matching.backend.utils.pdf_reader import read_any
                 with tempfile.TemporaryDirectory() as tmp:
                     dest = os.path.join(tmp, cv.filename)
                     with open(dest, "wb") as fh:
-                        fh.write(await cv.read())
+                        fh.write(cv_bytes)
                     try:
                         cv_text = (read_any(dest) or "").strip()
                     except Exception as e:
@@ -281,11 +329,13 @@ def build_router(agent) -> APIRouter:
                 log.warning("matching rank failed: %s", e)
 
         payload = {
+            "id": aid,
             "job_id": job_id,
             "candidate_name": candidate_name,
             "candidate_email": candidate_email,
             "cv_text": cv_text or None,
             "cv_filename": cv_filename,
+            "cv_path": cv_path,
             "fit_score": fit_score,
             "matched_skills": matched_skills,
             "missing_skills": missing_skills,
@@ -328,8 +378,58 @@ def build_router(agent) -> APIRouter:
             raise HTTPException(404, f"application not found: {app_id}")
         return row
 
+    @router.api_route(
+        "/applications/{app_id}/cv", methods=["GET", "HEAD"]
+    )
+    async def get_application_cv(app_id: str):
+        """Stream the original uploaded CV file (PDF / DOCX / image / txt).
+
+        Served `inline` so the browser previews it in an iframe rather than
+        triggering a download. Falls back to 404 if the application has no
+        persisted file (e.g. legacy rows that pre-date the cv_path column).
+
+        Also responds to HEAD so the frontend can probe existence cheaply
+        before mounting the iframe — Starlette's FileResponse skips the
+        body for HEAD requests automatically.
+        """
+        row = await asyncio.to_thread(
+            recruit_db.get_application, agent.conn, app_id
+        )
+        if row is None:
+            raise HTTPException(404, f"application not found: {app_id}")
+        cv_path = await asyncio.to_thread(
+            recruit_db.get_application_cv_path, agent.conn, app_id
+        )
+        if not cv_path:
+            raise HTTPException(404, "no CV on file for this application")
+        path = Path(cv_path)
+        if not path.is_file():
+            raise HTTPException(404, "CV file is missing on disk")
+        # Defence-in-depth: never serve anything outside CV_STORE.
+        try:
+            path.resolve().relative_to(CV_STORE.resolve())
+        except ValueError:
+            raise HTTPException(403, "CV path is outside the allowed store")
+        media_type, _ = mimetypes.guess_type(str(path))
+        if not media_type:
+            media_type = "application/octet-stream"
+        download_name = row.get("cv_filename") or path.name
+        # FastAPI's FileResponse defaults to attachment disposition. Force
+        # `inline` so PDFs/images preview directly in the iframe.
+        response = FileResponse(
+            str(path), media_type=media_type, filename=download_name
+        )
+        response.headers["Content-Disposition"] = (
+            f'inline; filename="{download_name}"'
+        )
+        return response
+
     @router.patch("/applications/{app_id}")
-    async def update_application(app_id: str, body: ApplicationPatch):
+    async def update_application(
+        app_id: str,
+        body: ApplicationPatch,
+        x_recruiter_id: Optional[str] = Header(default=None, alias="X-Recruiter-Id"),
+    ):
         if body.stage is not None and body.stage not in VALID_STAGES:
             raise HTTPException(
                 400,
@@ -382,10 +482,25 @@ def build_router(agent) -> APIRouter:
             except Exception as e:
                 log.warning("rejection notification failed: %s", e)
 
+            # Recruiter-taste capture (additive — never blocks the transition).
+            try:
+                await asyncio.to_thread(
+                    capture_decision,
+                    agent.conn,
+                    _resolve_recruiter_id(x_recruiter_id),
+                    app_id,
+                    "rejected",
+                )
+            except Exception as e:                       # pragma: no cover
+                log.warning("taste capture (rejected) failed: %s", e)
+
         return row
 
     @router.post("/applications/{app_id}/invite-interview")
-    async def invite_interview(app_id: str):
+    async def invite_interview(
+        app_id: str,
+        x_recruiter_id: Optional[str] = Header(default=None, alias="X-Recruiter-Id"),
+    ):
         app_row = await asyncio.to_thread(
             recruit_db.get_application, agent.conn, app_id
         )
@@ -445,6 +560,19 @@ def build_router(agent) -> APIRouter:
             app_id,
             {"stage": "approved"},
         )
+
+        # Recruiter-taste capture (additive — never blocks the transition).
+        try:
+            await asyncio.to_thread(
+                capture_decision,
+                agent.conn,
+                _resolve_recruiter_id(x_recruiter_id),
+                app_id,
+                "approved",
+            )
+        except Exception as e:                           # pragma: no cover
+            log.warning("taste capture (approved) failed: %s", e)
+
         return {
             "ok": True,
             "application_id": app_id,
@@ -540,6 +668,117 @@ def build_router(agent) -> APIRouter:
         if row is None:
             raise HTTPException(404, f"interview not found: {iid}")
         return row
+
+    # ------------------------------------------------------------------
+    # Recruiter-taste (POC). Mounted under /api/recruit/taste/* — the
+    # whole feature is additive and lives in agents/recruit/taste/.
+    # ------------------------------------------------------------------
+    from .taste.features import (
+        FEATURE_LABELS as _FEATURE_LABELS,
+        get_or_compute_features as _get_or_compute_features,
+    )
+    from .taste.learner import (
+        fit_recruiter_weights as _fit_recruiter_weights,
+        load_profile as _load_profile,
+        reset_profile as _reset_profile,
+        score_candidate as _score_candidate,
+    )
+
+    def _profile_to_payload(profile) -> Dict[str, Any]:
+        """Render a RecruiterProfile into the JSON shape the UI consumes.
+
+        Top-positive / top-negative are computed against the training mean
+        (i.e. against a "median candidate"), so the labels reflect what the
+        recruiter weights regardless of which candidate is being scored.
+        """
+        # For the profile view, surface the bare standardised weights —
+        # they're already on a comparable scale across features.
+        ranked = sorted(
+            profile.weights.items(), key=lambda kv: -kv[1],
+        )
+        positives = [
+            {"label": _FEATURE_LABELS[name], "weight": round(w, 3)}
+            for name, w in ranked if w > 0
+        ][:5]
+        negatives = [
+            {"label": _FEATURE_LABELS[name], "weight": round(w, 3)}
+            for name, w in reversed(ranked) if w < 0
+        ][:3]
+        return {
+            "recruiter_id": profile.recruiter_id,
+            "n_decisions": profile.n_decisions,
+            "confidence": profile.confidence.value,
+            "version": profile.version,
+            "updated_at": profile.updated_at,
+            "top_positive": positives,
+            "top_negative": negatives,
+        }
+
+    @router.get("/taste/me/profile")
+    async def taste_get_profile(
+        x_recruiter_id: Optional[str] = Header(default=None, alias="X-Recruiter-Id"),
+    ):
+        rid = _resolve_recruiter_id(x_recruiter_id)
+        profile = await asyncio.to_thread(_load_profile, agent.conn, rid)
+        if profile is None:
+            return {
+                "recruiter_id": rid,
+                "n_decisions": 0,
+                "confidence": "cold",
+                "version": 0,
+                "updated_at": None,
+                "top_positive": [],
+                "top_negative": [],
+            }
+        return _profile_to_payload(profile)
+
+    @router.get("/taste/score/{application_id}")
+    async def taste_score(
+        application_id: str,
+        x_recruiter_id: Optional[str] = Header(default=None, alias="X-Recruiter-Id"),
+    ):
+        rid = _resolve_recruiter_id(x_recruiter_id)
+
+        try:
+            features = await asyncio.to_thread(
+                _get_or_compute_features, agent.conn, application_id,
+            )
+        except LookupError:
+            raise HTTPException(404, f"application not found: {application_id}")
+
+        score = await asyncio.to_thread(
+            _score_candidate, agent.conn, rid, features,
+        )
+        return {
+            "application_id": application_id,
+            "recruiter_id": rid,
+            "score": round(score.score, 4),
+            "confidence": score.confidence.value,
+            "top_positive": [
+                {"label": label, "contribution": round(c, 3)}
+                for label, c in score.top_positive
+            ],
+            "top_negative": [
+                {"label": label, "contribution": round(c, 3)}
+                for label, c in score.top_negative
+            ],
+        }
+
+    @router.post("/taste/me/refit")
+    async def taste_refit(
+        x_recruiter_id: Optional[str] = Header(default=None, alias="X-Recruiter-Id"),
+    ):
+        rid = _resolve_recruiter_id(x_recruiter_id)
+        profile = await asyncio.to_thread(_fit_recruiter_weights, agent.conn, rid)
+        return _profile_to_payload(profile)
+
+    @router.post("/taste/me/reset")
+    async def taste_reset(
+        x_recruiter_id: Optional[str] = Header(default=None, alias="X-Recruiter-Id"),
+    ):
+        rid = _resolve_recruiter_id(x_recruiter_id)
+        existed = await asyncio.to_thread(_reset_profile, agent.conn, rid)
+        return {"recruiter_id": rid, "reset": existed}
 
     return router
 

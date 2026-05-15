@@ -12,7 +12,9 @@ import wandb
 from pathlib import Path
 from huggingface_hub import login
 
-hf_token = os.getenv("HUGGINGFACE_TOKEN")
+# Accept either env var — agents in this repo use HF_TOKEN, the HF docs use
+# HUGGINGFACE_TOKEN. Llama-3.1-8B-Instruct is gated so this must work.
+hf_token = os.getenv("HUGGINGFACE_TOKEN") or os.getenv("HF_TOKEN")
 if hf_token:
     login(token=hf_token)
 from transformers import (
@@ -28,6 +30,11 @@ from trl import DataCollatorForCompletionOnlyLM
 from lora_config import get_qlora_config, get_lora_config, print_trainable_parameters
 from data_loader import RecruiterDataLoader
 from trainer import get_default_callbacks
+from metrics import (
+    compute_metrics,
+    preprocess_logits_for_metrics,
+    TrainEvalGapCallback,
+)
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
@@ -39,23 +46,38 @@ def load_config(config_path: str = "config.yaml") -> dict:
 
 
 def setup_tokenizer(model_name: str):
-    """Setup tokenizer with proper padding configuration."""
+    """Setup tokenizer with proper padding configuration.
+
+    Llama-3.x ships a dedicated `<|finetune_right_pad_id|>` token (id 128004).
+    Using it instead of eos_token keeps padding and end-of-sequence distinct,
+    so the model doesn't confuse "more padding" with "stop generating" at
+    inference time.
+    """
     print(f"Loading tokenizer: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.pad_token = tokenizer.eos_token
+    finetune_pad = tokenizer.convert_tokens_to_ids("<|finetune_right_pad_id|>")
+    if isinstance(finetune_pad, int) and finetune_pad >= 0:
+        tokenizer.pad_token = "<|finetune_right_pad_id|>"
+        tokenizer.pad_token_id = finetune_pad
+    else:
+        # Llama-2 / other models without the dedicated pad token
+        tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
     return tokenizer
 
 
 def setup_model(config: dict, tokenizer):
-    """Setup model with QLoRA configuration."""
+    """Load base model + LoRA adapter according to the configured method.
+
+    method=qlora → 4-bit nf4 quantized base + bf16 compute (sub-32GB GPUs)
+    method=lora  → bf16 base, no quantization (recommended on ≥40GB GPUs)
+    """
     model_name = config["base_model"]
     method = config.get("method", "qlora")
 
     print(f"\nLoading model: {model_name}")
     print(f"Training method: {method}")
 
-    # Get quantization config for QLoRA
     if method == "qlora":
         bnb_config = get_qlora_config()
         model = AutoModelForCausalLM.from_pretrained(
@@ -65,15 +87,30 @@ def setup_model(config: dict, tokenizer):
             trust_remote_code=True,
             torch_dtype=torch.bfloat16,
         )
-        # Prepare for k-bit training
-        model = prepare_model_for_kbit_training(model)
-    else:
+        # Prepare for k-bit training (input/output embedding fp32 cast,
+        # disables some inplace ops that fight with quantized layers).
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=config["training"].get("gradient_checkpointing", True)
+        )
+    elif method == "lora":
+        # Plain bf16 LoRA. On a 96 GB GPU we never need to quantize an 8B model
+        # — quantization noise on Llama-3 is small but real, no reason to pay it.
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="auto",
             trust_remote_code=True,
             torch_dtype=torch.bfloat16,
+            attn_implementation="sdpa",  # Fastest stable attention on Blackwell
         )
+        if config["training"].get("gradient_checkpointing", True):
+            # Match the QLoRA path's "use_reentrant=False" hint — required
+            # when combining grad-checkpointing with PEFT.
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
+            model.enable_input_require_grads()
+    else:
+        raise ValueError(f"Unknown method '{method}'. Expected 'qlora' or 'lora'.")
 
     model.config.use_cache = False  # Required for gradient checkpointing
 
@@ -107,6 +144,7 @@ def setup_training_args(config: dict) -> TrainingArguments:
         warmup_ratio=train_config["warmup_ratio"],
         weight_decay=train_config["weight_decay"],
         optim=train_config["optim"],
+        max_grad_norm=train_config.get("max_grad_norm", 1.0),
         # Batch Configuration
         per_device_train_batch_size=train_config["per_device_train_batch_size"],
         per_device_eval_batch_size=train_config["per_device_eval_batch_size"],
@@ -138,6 +176,8 @@ def setup_training_args(config: dict) -> TrainingArguments:
         seed=train_config.get("seed", 42),
         data_seed=train_config.get("data_seed", 42),
         remove_unused_columns=train_config.get("remove_unused_columns", True),
+        group_by_length=train_config.get("group_by_length", False),
+        ddp_find_unused_parameters=train_config.get("ddp_find_unused_parameters", False),
     )
 
 
@@ -201,14 +241,32 @@ def main():
         early_stopping_patience=2,
         early_stopping_threshold=0.002,
     )
+    # Adds `train_eval_gap` to the wandb columns on every eval step.
+    callbacks.append(TrainEvalGapCallback())
 
-    # 8.5 Setup assistant-only loss masking for strict recruiter generation.
-    # We pass exact token IDs to prevent Llama 3 tokenizer from incorrectly merging newlines
-    # which breaks the subset matching algorithm in DataCollator.
-    response_template = "<|start_header_id|>assistant<|end_header_id|>"
-    response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)
-    
+    # 8.5 Multi-turn assistant-only loss masking.
+    #
+    # CRITICAL: passing only `response_template` was a bug in v2/v3 — the
+    # collator masks tokens up to the FIRST `<|start_header_id|>assistant…`
+    # marker only. Everything after (including subsequent USER turns) becomes
+    # part of the loss, so the model was being trained to also predict
+    # candidate replies. That's why earlier checkpoints fluently roleplayed
+    # the candidate at inference time.
+    #
+    # The fix: pass `instruction_template` as well. The collator then masks
+    # every USER block between successive assistant turns, leaving ONLY
+    # assistant tokens contributing to loss.
+    #
+    # We pass exact token IDs to avoid the Llama-3 tokenizer occasionally
+    # merging the surrounding newlines with the header tokens, which breaks
+    # the subset-matching algorithm inside DataCollatorForCompletionOnlyLM.
+    instruction_template = "<|start_header_id|>user<|end_header_id|>"
+    response_template    = "<|start_header_id|>assistant<|end_header_id|>"
+    instruction_template_ids = tokenizer.encode(instruction_template, add_special_tokens=False)
+    response_template_ids    = tokenizer.encode(response_template,    add_special_tokens=False)
+
     data_collator = DataCollatorForCompletionOnlyLM(
+        instruction_template=instruction_template_ids,
         response_template=response_template_ids,
         tokenizer=tokenizer,
         mlm=False,
@@ -225,9 +283,18 @@ def main():
         tokenizer=tokenizer,
         dataset_text_field="text",
         max_seq_length=config["training"]["max_seq_length"],
-        packing=False, # MUST be false when using DataCollatorForCompletionOnlyLM
+        packing=False,  # MUST stay false with DataCollatorForCompletionOnlyLM
         callbacks=callbacks,
-        neftune_noise_alpha=5.0, # Greatly reduces generic/repetitive responses for personas
+        # Quantitative eval metrics. See metrics.py for the formulas.
+        # preprocess_logits_for_metrics keeps memory bounded by reducing the
+        # (B, T, vocab=128k) logits tensor to (B, T-1, 3) before HF concatenates
+        # the per-batch outputs across the eval set.
+        compute_metrics=compute_metrics,
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+        # NEFTune was useful in v2/v3 to fight overfitting that came partly
+        # from the broken masking. With masking fixed the signal is cleaner and
+        # NEFTune just adds noise; turn it off. (Also deprecated as an SFTTrainer
+        # kwarg in newer TRL.)
     )
 
     # 10. Train

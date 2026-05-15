@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -85,6 +86,14 @@ class GroqClient:
             timeout=httpx.Timeout(timeout, connect=5.0),
         )
         self._api_key = api_key
+
+        # Local view of the server's TPM budget, refreshed from response
+        # headers. Lets us pre-sleep when we know we'd 429 instead of paying
+        # the 429 round-trip (which on Groq free-tier costs 13–17s per hit).
+        # See _wait_for_tpm_budget + _update_rate_state below.
+        self._tpm_remaining: Optional[int] = None
+        self._tpm_reset_at_monotonic: float = 0.0
+        self._tpm_lock = asyncio.Lock()
 
     @classmethod
     def from_env(cls) -> "GroqClient":
@@ -164,6 +173,79 @@ class GroqClient:
             raise GroqError(f"non-json content from groq: {exc}") from exc
 
     # -----------------------------------------------------------------------
+    # TPM budget governor
+    # -----------------------------------------------------------------------
+    @staticmethod
+    def _estimate_payload_tokens(payload: Dict[str, Any]) -> int:
+        """Rough char/4 heuristic + a response-budget cushion.
+
+        Groq's tokenizer isn't identical to OpenAI's but the ~4-chars-per-token
+        rule is close enough for budgeting (within ~20%). We add 600 tokens of
+        headroom for the response so we don't have to model max_tokens precisely.
+        """
+        try:
+            blob = json.dumps(payload, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return 2000
+        return max(400, len(blob) // 4 + 600)
+
+    async def _wait_for_tpm_budget(self, estimated_tokens: int) -> None:
+        """Sleep until the server should have enough budget for `estimated_tokens`.
+
+        No-op when:
+        - we've never seen a rate-limit header yet (first request of the process)
+        - we know we have enough remaining budget
+        - the reset time has already passed (the bucket has refilled)
+        """
+        async with self._tpm_lock:
+            if self._tpm_remaining is None or self._tpm_remaining >= estimated_tokens:
+                return
+            now = time.monotonic()
+            wait = self._tpm_reset_at_monotonic - now
+            if wait <= 0:
+                # Bucket should have refilled by clock time; pessimistically
+                # clear our local view and proceed — the next response header
+                # will refresh it.
+                self._tpm_remaining = None
+                return
+            log.info(
+                "groq tpm low (have %d, need ~%d) — pre-sleeping %.1fs",
+                self._tpm_remaining, estimated_tokens, wait,
+            )
+            # Clear the cached "remaining" so concurrent callers don't all
+            # decide to wait sequentially after they wake.
+            self._tpm_remaining = None
+            sleep_s = min(60.0, wait)
+        # Release the lock before sleeping so other tasks can read state.
+        await asyncio.sleep(sleep_s)
+
+    def _update_rate_state(
+        self, headers: httpx.Headers, *, exhausted: bool = False
+    ) -> None:
+        """Refresh local TPM view from response headers.
+
+        Called after every response. On 429, `exhausted=True` forces remaining
+        to 0 so other in-flight tasks don't race past us into another 429.
+        """
+        try:
+            if exhausted:
+                self._tpm_remaining = 0
+            else:
+                rem_h = headers.get("x-ratelimit-remaining-tokens")
+                if rem_h is not None:
+                    self._tpm_remaining = max(0, int(float(rem_h)))
+            reset_h = (
+                headers.get("x-ratelimit-reset-tokens")
+                or headers.get("retry-after")
+            )
+            if reset_h is not None:
+                reset_s = max(0.0, float(reset_h))
+                self._tpm_reset_at_monotonic = time.monotonic() + reset_s
+        except (ValueError, TypeError):
+            # Headers are best-effort — never crash the request on a bad header.
+            pass
+
+    # -----------------------------------------------------------------------
     # Internal: POST with retry on 5xx / timeout / 429. Other 4xx never retry.
     # -----------------------------------------------------------------------
     async def _post_with_retry(
@@ -182,7 +264,12 @@ class GroqClient:
         rate_limit_retries_left = 3
         attempt = 0
         last_exc: Optional[Exception] = None
+        estimated = self._estimate_payload_tokens(payload)
         while True:
+            # Proactive throttle: if we already know the budget is too low,
+            # sleep until it refills instead of paying a 429 round-trip.
+            await self._wait_for_tpm_budget(estimated)
+
             try:
                 resp = await self._client.post(
                     GROQ_URL, json=payload, headers=headers, timeout=timeout,
@@ -198,8 +285,8 @@ class GroqClient:
                 continue
 
             if resp.status_code == 429:
-                # Rate-limited. Use the server's Retry-After hint when present,
-                # else default to enough to clear the TPM window.
+                # Rate-limited. Update local view + back off using server hint.
+                self._update_rate_state(resp.headers, exhausted=True)
                 if rate_limit_retries_left <= 0:
                     raise GroqError(f"groq 429 after retries: {resp.text[:200]}")
                 wait_s = _parse_retry_after(resp.headers, default=20.0)
@@ -220,6 +307,8 @@ class GroqClient:
                 # Other 4xx (auth, bad request) never retry
                 raise GroqError(f"groq {resp.status_code}: {resp.text[:200]}")
 
+            # Success — refresh budget view for the next caller.
+            self._update_rate_state(resp.headers)
             try:
                 return resp.json()
             except json.JSONDecodeError as exc:

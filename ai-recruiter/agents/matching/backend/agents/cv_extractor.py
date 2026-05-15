@@ -1,5 +1,4 @@
 """LLM-backed extraction of per-candidate GA signals.
-
 Given a job description and a CV, runs a locally loaded HuggingFace
 Llama-3.2-3B-Instruct and returns a structured object that fills the fields
 the Constraint-Aware GA consumes:
@@ -12,10 +11,8 @@ the Constraint-Aware GA consumes:
 
 `interview_score` stays 0 by design: it cannot be inferred from a CV.
 The hiring team fills it in the UI after the actual interview.
-
 The gated model is loaded on first use; pass HF_TOKEN via env.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +35,6 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
 
 SYSTEM_PROMPT = """You are an expert technical recruiter. You extract structured hiring signals from a CV given a job description, for use in a downstream optimizer.
-
 Return ONLY a single valid JSON object, no prose, no markdown fences. Schema:
 
 {
@@ -217,7 +213,6 @@ class CVSignalExtractor:
             )
         gen = out[0, input_len:]
         return self._tokenizer.decode(gen, skip_special_tokens=True)
-
     async def extract(
         self,
         jd_text: str,
@@ -272,11 +267,7 @@ class CVSignalExtractor:
             else:
                 out[cid] = {"signals": sig.model_dump(), "error": None}
         return out
-
-
 _singleton: Optional[CVSignalExtractor] = None
-
-
 def get_extractor() -> CVSignalExtractor:
     global _singleton
     if _singleton is None:

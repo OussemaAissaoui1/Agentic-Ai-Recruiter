@@ -313,7 +313,18 @@ async def websocket_endpoint(ws: WebSocket, session_id: Optional[str] = Query(de
             last_log_time = now
 
     async def receiver():
-        """Receive messages from the client. Only keep the latest video frame."""
+        """Receive messages from the client.
+
+        Accepts two wire formats:
+          - Binary WS frame: raw JPEG bytes (the production path used by the
+            HireFlow interview UI — ws.send(arrayBuffer)).
+          - Text WS frame: JSON control messages with a "type" discriminator
+            (legacy "video_frame" data-URL path, plus "audio_chunk", "ping",
+            calibration_*, question_marker, session_end).
+
+        Previously this used ws.receive_text() which raises on a binary
+        frame, killing the receiver task on the very first JPEG.
+        """
         nonlocal frame_recv_count, frames_dropped, closed, last_audio_result
 
         async def _run_audio_async(waveform):
@@ -327,22 +338,49 @@ async def websocket_endpoint(ws: WebSocket, session_id: Optional[str] = Query(de
             except Exception as e:
                 logger.warning("Audio inference error: %s", e)
 
+        def _ingest_frame(frame: Optional[np.ndarray]) -> None:
+            """Stash a freshly decoded frame for the processor task."""
+            nonlocal frame_recv_count, frames_dropped
+            if frame is None:
+                return
+            frame_recv_count += 1
+            old_id = latest_frame["id"]
+            latest_frame["data"] = frame
+            latest_frame["id"] = frame_recv_count
+            if processing and old_id > 0:
+                frames_dropped += 1
+
         try:
             while not closed:
-                raw = await ws.receive_text()
-                msg = json.loads(raw)
+                message = await ws.receive()
+                if message.get("type") == "websocket.disconnect":
+                    closed = True
+                    break
+
+                # Binary path: raw JPEG bytes — decode directly, no base64.
+                body_bytes = message.get("bytes")
+                if body_bytes is not None:
+                    try:
+                        arr = np.frombuffer(body_bytes, dtype=np.uint8)
+                        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    except Exception as e:
+                        logger.warning("Failed to decode binary frame: %s", e)
+                        frame = None
+                    _ingest_frame(frame)
+                    continue
+
+                # Text path: JSON control message.
+                body_text = message.get("text")
+                if body_text is None:
+                    continue
+                try:
+                    msg = json.loads(body_text)
+                except json.JSONDecodeError:
+                    continue
                 msg_type = msg.get("type")
 
                 if msg_type == "video_frame":
-                    frame_recv_count += 1
-                    frame = _decode_frame(msg["data"])
-                    if frame is not None:
-                        old_id = latest_frame["id"]
-                        latest_frame["data"] = frame
-                        latest_frame["id"] = frame_recv_count
-                        # Count frames we overwrote without processing
-                        if processing and old_id > 0:
-                            frames_dropped += 1
+                    _ingest_frame(_decode_frame(msg["data"]))
 
                 elif msg_type == "audio_chunk":
                     sr = msg.get("sample_rate", 44100)
@@ -556,9 +594,24 @@ async def websocket_endpoint(ws: WebSocket, session_id: Optional[str] = Query(de
                     "is_calibrated": calibrator.is_calibrated,
                 }
 
-                # Add dimension scores
+                # Add dimension scores. We expose two parallel views:
+                #   - dimension_scores: the four raw 0..1 dims for any backend
+                #     consumer (scoring agent, persisted reports).
+                #   - scores: a convenience 0..100 mapping in the shape the
+                #     HireFlow chips read directly. Composure ≈ low arousal,
+                #     stress ≈ cognitive_load.
                 if dim_scores is not None:
                     response["dimension_scores"] = dim_scores.to_dict()
+
+                    def _pct(x: float) -> float:
+                        return round(max(0.0, min(100.0, float(x) * 100.0)), 1)
+
+                    response["scores"] = {
+                        "engagement": _pct(dim_scores.engagement_level),
+                        "confidence": _pct(dim_scores.confidence_level),
+                        "composure": _pct(1.0 - dim_scores.emotional_arousal),
+                        "stress": _pct(dim_scores.cognitive_load),
+                    }
 
                 # Add session stats every 30 frames
                 if frame_proc_count % 30 == 0:

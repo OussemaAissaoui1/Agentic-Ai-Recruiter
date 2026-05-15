@@ -13,6 +13,7 @@ import {
   jobs,
   notifications,
   scoring,
+  taste,
   type Application,
   type ApplicationStage,
   type Interview,
@@ -20,6 +21,8 @@ import {
   type InterviewTurn,
   type Job,
   type Notification,
+  type RecruiterFitScore,
+  type RecruiterTasteProfile,
   type StatusResponse,
 } from "@/lib/api";
 
@@ -46,6 +49,9 @@ export const qk = {
     ["interview", interview_id] as const,
   scoringReport: (interview_id: string) =>
     ["scoring", interview_id, "report"] as const,
+  tasteProfile: ["taste", "profile"] as const,
+  tasteScore: (application_id: string) =>
+    ["taste", "score", application_id] as const,
 };
 
 // ─── Status / Health ─────────────────────────────────────────────────────────
@@ -244,6 +250,7 @@ export function useCreateInterview() {
     {
       application_id: string;
       transcript: InterviewTurn[];
+      behavioral?: Record<string, unknown> | null;
       status?: string;
       started_at?: number;
       ended_at?: number;
@@ -305,6 +312,47 @@ export function useDeleteScoringReport() {
     mutationFn: (interview_id) => scoring.deleteReport(interview_id),
     onSuccess: (_data, interview_id) => {
       qc.setQueryData(qk.scoringReport(interview_id), null);
+    },
+  });
+}
+
+// ─── Recruiter taste ─────────────────────────────────────────────────────────
+export function useRecruiterProfile() {
+  return useQuery<RecruiterTasteProfile>({
+    queryKey: qk.tasteProfile,
+    queryFn: ({ signal }) => taste.profile({ signal }),
+    // Profile changes only when a refit lands; refresh on focus is cheap
+    // enough to keep the settings page snappy without polling.
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useRecruiterFitScore(application_id: string | undefined) {
+  return useQuery<RecruiterFitScore>({
+    queryKey: qk.tasteScore(application_id ?? ""),
+    queryFn: ({ signal }) => taste.score(application_id as string, { signal }),
+    enabled: !!application_id,
+  });
+}
+
+export function useRefitProfile() {
+  const qc = useQueryClient();
+  return useMutation<RecruiterTasteProfile, Error, void>({
+    mutationFn: () => taste.refit(),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.tasteProfile, data);
+      // Re-score every visible application against the fresh profile.
+      qc.invalidateQueries({ queryKey: ["taste", "score"] });
+    },
+  });
+}
+
+export function useResetProfile() {
+  const qc = useQueryClient();
+  return useMutation<{ recruiter_id: string; reset: boolean }, Error, void>({
+    mutationFn: () => taste.reset(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["taste"] });
     },
   });
 }

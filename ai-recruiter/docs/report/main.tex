@@ -1,0 +1,205 @@
+% A LaTeX (non-official) template for ENSI projects reports
+% Copyright (C) 2025 ENSI
+
+
+\documentclass[12pt,a4paper]{report}
+
+% Encoding and languages
+\usepackage[utf8]{inputenc}  % UTF-8 encoding (deprecated but useful for pdflatex)
+\usepackage[T1]{fontenc}     % Font encoding
+%\usepackage[french]{babel}  % Main language of the document
+\usepackage[english]{babel}  % Uncomment if writing in English
+
+% Page layout and margins
+\usepackage{geometry}        % Margin configuration
+\geometry{a4paper, margin=2.5cm}
+
+% Line spacing
+\usepackage{setspace}
+\setstretch{1.25}            % gentle increase for readability
+
+% Widow / orphan protection — keep paragraphs together across page breaks
+\widowpenalty=10000
+\clubpenalty=10000
+
+% Title and header/footer management
+\usepackage{titlesec}        % Title customization
+\titleformat{\chapter}[frame]{\normalfont\huge\bfseries}{\chaptername\ \thechapter}{20pt}{\Huge}
+\usepackage{fancyhdr}        % Header and footer customization
+\pagestyle{fancy}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{#1}}
+\fancyhead[R]{\thepage}
+\fancyhead[L]{\chaptername\ \thechapter\ --\ \leftmark}
+
+% Mathematics
+\usepackage{amsmath, amssymb, amsthm, bm}
+
+% Algorithms
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+%\usepackage{listofalgorithms} % To generate the list of algorithms
+
+% Image and figure management
+\usepackage{graphicx}        % Image inclusion
+\graphicspath{{images/}}     % Default path for images
+\usepackage{subfig}          % Sub-figures
+\usepackage{float}           % Exact figure positioning
+
+% TikZ diagrams
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit, shapes.geometric, shapes.multipart, shapes.symbols, calc}
+
+% Tables and advanced layouts
+\usepackage{array, multirow}
+
+% Lists: tighter itemize/enumerate spacing
+\usepackage{enumitem}
+\setlist[itemize]{topsep=0pt,itemsep=1pt,parsep=0pt,leftmargin=1.5em}
+\setlist[enumerate]{topsep=0pt,itemsep=1pt,parsep=0pt,leftmargin=1.5em}
+
+% References and bibliographies management
+\usepackage[hidelinks]{hyperref}        % Clickable links in the PDF (no coloured borders)
+\usepackage[footnote]{acronym} % Acronyms as footnotes
+\usepackage[resetlabels,labeled]{multibib} % Multiple bibliographies
+\newcites{URL}{Netography}  % Bibliography specific to Internet sources
+\usepackage{url}            % URL formatting
+
+% Arabic text (for pdflatex only)
+%\usepackage{arabtex}         % Arabic text -- enable if Arabic content needed
+%\usepackage{utf8}            % Ensure UTF-8 compatibility
+
+% Subfile management
+\usepackage{subfiles}
+
+% Define sizes for figures
+\newlength\figureheight
+\newlength\figurewidth
+% if the report is written in English
+%\renewcommand{\listalgorithmname}{Liste des Algorithmes} % Comment out for English report
+% PDF file insertion
+\usepackage{pdfpages}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%
+%%% Cover page %%%
+%%%%%%%%%%%%%%%%%%
+
+\subfile{pg-ENSI_ang} 
+%\subfile{pg-ENSI_ang} % if english report
+\clearpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%% Acknowledgments, table of contents, etc. %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\frontmatter
+
+\clearpage
+\subfile{0-i-signature}
+\clearpage
+\pagenumbering{roman}
+\subfile{0-iii-Remerciements}
+\clearpage
+\subfile{0-iv-Acknowledgements}
+\clearpage
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+\listofalgorithms
+\clearpage
+%\chapter*{Liste des acronymes}
+\chapter*{List of acronyms}% if english report
+\markboth{List of acronyms}{List of acronyms}
+\begin{acronym}[CRISP-DM] % longest acronym here, used for label width
+\acro{A2A}{\emph{Agent-to-Agent} (protocol)}
+\acro{AI}{\emph{Artificial Intelligence}}
+\acro{API}{\emph{Application Programming Interface}}
+\acro{ASR}{\emph{Automatic Speech Recognition}}
+\acro{ATS}{\emph{Applicant Tracking System}}
+\acro{AU}{\emph{Action Unit}}
+\acro{BERT}{\emph{Bidirectional Encoder Representations from Transformers}}
+\acro{BPE}{\emph{Byte-Pair Encoding}}
+\acro{CPU}{\emph{Central Processing Unit}}
+\acro{CRISP-DM}{\emph{Cross-Industry Standard Process for Data Mining}}
+\acro{CRUD}{\emph{Create, Read, Update, Delete}}
+\acro{CV}{\emph{Curriculum Vitae}}
+\acro{DL}{\emph{Deep Learning}}
+\acro{ENSI}{\emph{École Nationale des Sciences de l'Informatique}}
+\acro{EU}{\emph{European Union}}
+\acro{FACS}{\emph{Facial Action Coding System}}
+\acro{GA}{\emph{Genetic Algorithm}}
+\acro{GAT}{\emph{Graph Attention Network}}
+\acro{GCN}{\emph{Graph Convolutional Network}}
+\acro{GIN}{\emph{Graph Isomorphism Network}}
+\acro{GNN}{\emph{Graph Neural Network}}
+\acro{GPU}{\emph{Graphics Processing Unit}}
+\acro{HF}{\emph{HuggingFace}}
+\acro{HITL}{\emph{Human-In-The-Loop}}
+\acro{HMM}{\emph{Hidden Markov Model}}
+\acro{HR}{\emph{Human Resources}}
+\acro{JD}{\emph{Job Description}}
+\acro{JSON}{\emph{JavaScript Object Notation}}
+\acro{KG}{\emph{Knowledge Graph}}
+\acro{LDA}{\emph{Latent Dirichlet Allocation}}
+\acro{LLM}{\emph{Large Language Model}}
+\acro{LoRA}{\emph{Low-Rank Adaptation}}
+\acro{LR}{\emph{Logistic Regression}}
+\acro{LTS}{\emph{Long-Term Support}}
+\acro{MCP}{\emph{Model Context Protocol}}
+\acro{ML}{\emph{Machine Learning}}
+\acro{MoSCoW}{\emph{Must, Should, Could and Won't have} (prioritisation)}
+\acro{NIST}{\emph{National Institute of Standards and Technology}}
+\acro{NLP}{\emph{Natural Language Processing}}
+\acro{ORM}{\emph{Object-Relational Mapping}}
+\acro{PDF}{\emph{Portable Document Format}}
+\acro{PEFT}{\emph{Parameter-Efficient Fine-Tuning}}
+\acro{PFE}{\emph{Projet de Fin d'\'Etudes}}
+\acro{QLoRA}{\emph{Quantised Low-Rank Adaptation}}
+\acro{R3F}{\emph{React Three Fiber}}
+\acro{RAG}{\emph{Retrieval-Augmented Generation}}
+\acro{RAM}{\emph{Random-Access Memory}}
+\acro{RBAC}{\emph{Role-Based Access Control}}
+\acro{RDF}{\emph{Resource Description Framework}}
+\acro{RMF}{\emph{Risk Management Framework}}
+\acro{SPA}{\emph{Single-Page Application}}
+\acro{SQL}{\emph{Structured Query Language}}
+\acro{SSD}{\emph{Solid-State Drive}}
+\acro{TAPJFNN}{\emph{Topic-Aware Person--Job Fit Neural Network}}
+\acro{TTS}{\emph{Text-to-Speech}}
+\acro{VAD}{\emph{Voice-Activity Detection}}
+\acro{VRAM}{\emph{Video Random-Access Memory}}
+\end{acronym}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Body of the report and references %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\pagestyle{fancy}
+
+\cleardoublepage
+\pagenumbering{arabic}
+\subfile{0-introduction}
+\subfile{1-first-chapter}
+\subfile{2-state-of-the-art}
+\subfile{3-analysis-design}
+\subfile{2-conclusion}
+
+% Appendices
+\appendix
+\subfile{3-annexes}
+
+
+%\renewcommand{\refname}{Bibliographie}
+\bibliographystyle{plain}
+%\bibliography{references}\addcontentsline{toc}{chapter}{Bibliographie}
+\bibliography{references}\addcontentsline{toc}{chapter}{Bibliography}% if english report
+
+\bibliographystyleURL{plain}
+%\bibliographyURL{urls}\addcontentsline{toc}{chapter}{Netographie}
+\bibliographyURL{urls}\addcontentsline{toc}{chapter}{Netography}% if english report
+
+\end{document}

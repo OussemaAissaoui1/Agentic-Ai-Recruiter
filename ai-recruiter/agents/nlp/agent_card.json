@@ -1,7 +1,7 @@
 {
   "name": "nlp",
   "version": "0.2.0",
-  "description": "Recruiter persona (Alex). vLLM Llama-3.1-8B fine-tune (recruiter-persona-merged-v2) + Qwen2.5-1.5B response scorer + Qwen2.5-1.5B question refiner + Kokoro TTS, with sentence-level streaming audio.",
+  "description": "Recruiter persona (Alex). vLLM Llama-3.1-8B fine-tune (fintuned_v4_AiRecruter) + Qwen2.5-1.5B response scorer + Qwen2.5-1.5B question refiner + Kokoro TTS, with sentence-level streaming audio.",
   "transports": ["http"],
   "routes": [
     "/api/nlp/health",

@@ -41,6 +41,7 @@ async def score_interview(
     cv_text: str,
     jd_text: str,
     transcript: list[TranscriptTurn],
+    behavior_summary: Optional[dict] = None,
     concurrency: int = 4,
     timeout: float = 30.0,
 ) -> InterviewReport:
@@ -94,6 +95,7 @@ async def score_interview(
         client=client, model=model, timeout=timeout,
         job_title=job_title or "", jd_text=jd_text, cv_text=cv_text,
         transcript=transcript, per_turn=list(per_turn),
+        behavior_summary=behavior_summary,
     )
 
     return InterviewReport(
@@ -117,11 +119,13 @@ async def _score_overall(
     cv_text: str,
     transcript: list[TranscriptTurn],
     per_turn: list[TurnScore],
+    behavior_summary: Optional[dict] = None,
 ) -> OverallAssessment:
     tech_avg, coh_avg = compute_averages(per_turn)
     system, user = overall_prompt(
         job_title=job_title, jd_text=jd_text, cv_text=cv_text,
         transcript=transcript, per_turn=per_turn,
+        behavior_summary=behavior_summary,
     )
     try:
         data = await client.chat_json(

@@ -1,9 +1,11 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FitBadge, StageChip } from "@/components/Bits";
 import { RowRecommendation } from "@/components/scoring/RowRecommendation";
 import { ScoreSummaryCard } from "@/components/scoring/ScoreSummaryCard";
+import { CvViewer } from "@/components/scoring/CvViewer";
+import { RecruiterFitPill } from "@/components/recruiter-taste/RecruiterFitPill";
 import {
   Filter,
   GitCompare,
@@ -12,6 +14,7 @@ import {
   MapPin,
   Briefcase,
   Calendar,
+  FileText,
   Loader2,
 } from "lucide-react";
 import {
@@ -102,7 +105,7 @@ function Applicants() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-4xl tracking-tight">Applicants</h1>
+          <h1 className="font-display text-3xl tracking-tight">Applicants</h1>
           <p className="mt-1 text-muted-foreground">
             {isLoading
               ? "Loading…"
@@ -120,12 +123,18 @@ function Applicants() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-3">
-        <Filter className="h-4 w-4 text-muted-foreground" />
+      <div
+        className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-3"
+        role="group"
+        aria-label="Applicant filters"
+      >
+        <Filter className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <label className="sr-only" htmlFor="filter-job">Filter by job</label>
         <select
+          id="filter-job"
           value={jobFilter}
           onChange={(e) => setJobFilter(e.target.value)}
-          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+          className="min-h-[40px] rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <option value="all">All jobs</option>
           {jobs.map((j) => (
@@ -134,10 +143,12 @@ function Applicants() {
             </option>
           ))}
         </select>
+        <label className="sr-only" htmlFor="filter-stage">Filter by stage</label>
         <select
+          id="filter-stage"
           value={stage}
           onChange={(e) => setStage(e.target.value)}
-          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+          className="min-h-[40px] rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           {["all", "New", "Interview", "Offer", "Rejected"].map((s) => (
             <option key={s} value={s}>
@@ -146,16 +157,21 @@ function Applicants() {
           ))}
         </select>
         <div className="ml-2 flex items-center gap-2 text-sm text-muted-foreground">
-          Min fit
+          <label htmlFor="filter-min-fit">Min fit</label>
           <input
+            id="filter-min-fit"
             type="range"
             min={0}
             max={100}
             value={minFit}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={minFit}
+            aria-valuetext={`Minimum fit ${minFit} percent`}
             onChange={(e) => setMinFit(+e.target.value)}
             className="w-32 accent-[oklch(0.7_0.2_295)]"
           />
-          <span className="font-mono w-8">{minFit}</span>
+          <span className="font-mono w-8 tabular-nums" aria-hidden>{minFit}</span>
         </div>
       </div>
 
@@ -245,6 +261,9 @@ function Applicants() {
                     applicationId={c.id}
                     enabled={c.stage === "interviewed"}
                   />
+                  {c.stage !== "applied" && (
+                    <RecruiterFitPill applicationId={c.id} size="sm" />
+                  )}
                   <FitBadge value={fit} size="sm" />
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
@@ -279,6 +298,14 @@ function Drawer({
   onClose: () => void;
   wide?: boolean;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <>
       <motion.div
@@ -286,22 +313,27 @@ function Drawer({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-sm"
+        className="fixed inset-0 z-40 bg-foreground/40 backdrop-blur-sm"
+        aria-hidden
       />
       <motion.aside
         initial={{ x: "100%" }}
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
         transition={{ type: "spring", stiffness: 320, damping: 36 }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Candidate details"
         className={`fixed right-0 top-0 z-50 h-screen w-full overflow-y-auto border-l border-border bg-card shadow-2xl ${
           wide ? "max-w-5xl" : "max-w-xl"
         }`}
       >
         <button
           onClick={onClose}
-          className="sticky top-3 ml-auto mr-3 flex rounded-md p-1.5 hover:bg-muted"
+          aria-label="Close panel (Esc)"
+          className="sticky top-3 ml-auto mr-3 flex min-h-[40px] min-w-[40px] items-center justify-center rounded-md p-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden />
         </button>
         <div className="px-6 pb-10 -mt-7">{children}</div>
       </motion.aside>
@@ -315,6 +347,7 @@ function CandidatePanel({ c, job }: { c: Application; job?: Job }) {
   const initials = initialsOf(c.candidate_name, c.candidate_email);
   const update = useUpdateApplication();
   const invite = useInviteInterview();
+  const [cvOpen, setCvOpen] = useState(false);
 
   const moveTo = async (next: Application["stage"]) => {
     try {
@@ -370,29 +403,44 @@ function CandidatePanel({ c, job }: { c: Application; job?: Job }) {
         <FitBadge value={fit} size="lg" />
       </div>
 
-      <div className="rounded-2xl border border-border bg-background p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground">CV</div>
-          <span className="truncate text-xs text-muted-foreground">
-            {c.cv_filename || "—"}
-          </span>
+      {c.stage !== "applied" && (
+        <div className="flex items-center gap-2">
+          <RecruiterFitPill applicationId={c.id} />
         </div>
-        {c.cv_text ? (
-          <details className="mt-3 group">
-            <summary className="cursor-pointer text-sm text-accent hover:underline">
-              <span className="group-open:hidden">Read full CV</span>
-              <span className="hidden group-open:inline">Hide CV</span>
-            </summary>
-            <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
-              {c.cv_text}
-            </pre>
-          </details>
-        ) : (
-          <p className="mt-2 text-xs italic text-muted-foreground">
-            No parsed text available for this CV.
-          </p>
-        )}
+      )}
+
+      <div className="rounded-2xl border border-border bg-background p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs uppercase tracking-widest text-muted-foreground">
+              CV
+            </div>
+            <div className="mt-0.5 truncate text-sm font-medium">
+              {c.cv_filename || "No file on record"}
+            </div>
+          </div>
+          {c.cv_filename ? (
+            <button
+              onClick={() => setCvOpen(true)}
+              className="press-tight inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold transition-transform hover:scale-[1.02] hover:bg-muted"
+              title="Preview the original PDF / file"
+            >
+              <FileText className="h-3.5 w-3.5 text-accent" />
+              View CV
+            </button>
+          ) : (
+            <span className="text-xs italic text-muted-foreground">
+              Nothing uploaded
+            </span>
+          )}
+        </div>
       </div>
+      <CvViewer
+        open={cvOpen}
+        onOpenChange={setCvOpen}
+        applicationId={c.id}
+        filename={c.cv_filename}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-border p-4">

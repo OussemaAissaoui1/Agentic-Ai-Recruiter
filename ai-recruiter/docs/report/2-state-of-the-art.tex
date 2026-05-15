@@ -1,0 +1,568 @@
+\begin{center}
+    \chapter{State of the Art}
+\end{center}
+\label{chap:sota}
+
+\section{Introduction}
+
+The HireFlow project relies on a heterogeneous stack of
+artificial-intelligence and natural-language-processing techniques to
+build an end-to-end agentic recruitment assistant. This chapter
+introduces the key concepts, architectures and protocols on which the
+platform is built: the foundational notions of machine learning,
+transformer-based language models and parameter-efficient fine-tuning,
+multi-agent systems, knowledge graphs and graph-augmented retrieval,
+candidate--job matching, affective computing and speech technologies,
+and personalised ranking.
+
+\section{Foundations of Artificial Intelligence and Natural Language
+Processing}
+
+This section recalls the building blocks shared by every other
+component of HireFlow: the AI/ML/DL hierarchy, the three learning
+regimes, transfer learning, embeddings, and the attention mechanism
+that underlies the transformer architecture.
+
+\subsection{Artificial Intelligence, Machine Learning and Deep Learning}
+\emph{Artificial intelligence} (AI) is the broad scientific field
+concerned with the design of computational systems that perform tasks
+usually associated with human intelligence: perception, reasoning,
+decision-making, language understanding and creative production.
+\emph{Machine learning} (ML) gathers the methods inside this field that
+improve their behaviour by inferring patterns from data rather than by
+following hand-written rules. \emph{Deep learning} (DL) is the subset
+of machine learning that relies on artificial neural networks with many
+layers, trained end-to-end by gradient descent, and is responsible for
+most of the progress in vision, speech and language over the past
+decade.
+
+\subsection{Learning Regimes}
+Three learning regimes coexist in modern systems:
+\begin{itemize}
+    \item \emph{Supervised learning} trains a model on input--output
+        pairs $(x, y)$ produced by human annotation, so that it learns
+        to predict the correct $y$ for an unseen $x$.
+    \item \emph{Self-supervised learning} replaces the human label
+        with a pretext task derived from the data itself, such as
+        predicting the next token of a sentence or the masked word
+        inside a paragraph; it is the dominant paradigm for
+        pre-training large language and speech models on corpora too
+        vast to annotate by hand.
+    \item \emph{Unsupervised learning} discovers structure in
+        unlabelled data through clustering, dimensionality reduction
+        or density estimation.
+\end{itemize}
+
+\subsection{Pre-training, Fine-Tuning and Transfer Learning}
+\emph{Transfer learning} reuses a model trained on one task to solve a
+related one. In modern natural-language processing, the canonical form
+is \emph{pre-training} a large model on a generic self-supervised task
+with a very large corpus, then \emph{fine-tuning} it on a small
+labelled dataset that targets the application. Pre-training amortises
+the cost of learning general linguistic competence, while fine-tuning
+specialises the model on the downstream task at a fraction of that
+cost.
+
+\subsection{Tokenisation and Embeddings}
+A \emph{tokeniser} converts a string into a sequence of integer
+identifiers from a fixed vocabulary, usually through subword algorithms
+such as \acs{BPE}, WordPiece or SentencePiece, which eliminate
+out-of-vocabulary words. An \emph{embedding} is a fixed-size dense
+vector that represents a discrete object --- a token, a sentence, a
+document or an entity --- in a continuous space where geometric
+proximity reflects semantic similarity. \emph{Sentence embeddings}
+aggregate the contextual embeddings of a whole sentence into a single
+vector, typically by mean-pooling, and the cosine similarity between
+two such embeddings is the standard semantic-distance measure.
+
+\subsection{The Attention Mechanism}
+The \emph{attention} mechanism lets every position of a sequence
+selectively gather information from any other position, weighted by a
+learned compatibility score. In its scaled-dot-product form, three
+projections of the input --- the queries $Q$, the keys $K$ and the
+values $V$ --- are combined as
+\begin{equation}
+    \mathrm{Attention}(Q, K, V) =
+        \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right) V,
+    \label{eq:attention}
+\end{equation}
+\noindent which produces a context-sensitive update for each position.
+\emph{Self-attention} restricts the operation to a single sequence;
+\emph{cross-attention} lets one sequence attend to another; and
+\emph{multi-head} attention runs several such operations in parallel
+and concatenates their outputs.
+
+\section{Large Language Models and Fine-Tuning}
+
+This section presents the transformer architecture, the family of
+large language models built on top of it, and the parameter-efficient
+methods that adapt them to specialised tasks without re-training the
+billions of base weights.
+
+\subsection{The Transformer Architecture}
+Modern language models almost exclusively rely on the
+\textbf{transformer} architecture introduced by Vaswani \emph{et~al.}
+in 2017~\cite{vaswani2017attention}. The transformer replaces sequential
+recurrence with self-attention, which lifts a long-standing parallelism
+bottleneck and lets the model capture dependencies between any two
+positions in constant computational depth. Figure~\ref{fig:transformer}
+shows the canonical encoder--decoder architecture: the encoder ingests
+the source sequence and produces a contextualised representation
+through stacked layers of multi-head self-attention and feed-forward
+networks; the decoder generates the output sequence autoregressively,
+combining masked self-attention with cross-attention over the encoder
+output. Stacking identical blocks yields the encoder, the decoder, or,
+in the most common contemporary configuration, a \emph{decoder-only}
+stack specialised for next-token prediction.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{transformer-arch.png}
+    \caption{Transformer encoder--decoder architecture.}
+    \label{fig:transformer}
+\end{figure}
+
+\subsection{Large Language Models}
+A \emph{large language model} (LLM) is a transformer-based decoder-only
+network with billions of parameters, pre-trained self-supervised on a
+multi-trillion-token corpus to predict the next token, then
+instruction-tuned to follow human prompts. Open-weight families such as
+\textbf{Llama} and \textbf{Qwen} make a class of techniques ---
+inspection, fine-tuning, on-premises deployment --- accessible that
+closed commercial models do not.
+
+\subsection{Parameter-Efficient Fine-Tuning}
+Adapting an open-weight LLM to a specialised task no longer requires
+full fine-tuning of the base model. The \emph{parameter-efficient
+fine-tuning} (PEFT) family freezes the base weights and trains a small
+number of additional parameters that capture the task-specific
+adjustment. The dominant approach is \textbf{LoRA} (Low-Rank
+Adaptation)~\cite{hu2022lora}, which adds to each linear layer a
+low-rank update
+\begin{equation}
+    \Delta W = B A,\qquad
+    A \in \mathbb{R}^{r \times d},\
+    B \in \mathbb{R}^{d \times r},\
+    r \ll d,
+    \label{eq:lora}
+\end{equation}
+\noindent shrinking the trainable-parameter count by 100 to
+$1{,}000\times$ with negligible quality loss. \acs{QLoRA} extends the
+recipe by quantising the frozen base weights to four-bit precision,
+which lets a multi-billion-parameter model be fine-tuned on a single
+consumer-class \acs{GPU}.
+
+\section{Multi-Agent Systems and Agent Protocols}
+
+This section defines what an agent is, presents the ReAct loop on
+which most modern agent implementations are based, surveys the
+families of multi-agent orchestration frameworks, and closes with the
+open communication protocols that connect them.
+
+\subsection{Agent Definition}
+An \emph{agent} is an autonomous software entity built around a
+language model that, given a goal expressed in natural language,
+decides on its own which actions to take, executes them through external
+\emph{tools} and observes the results before choosing the next step.
+Three properties distinguish this paradigm from the prompt-and-response
+one. First, the agent maintains an internal \emph{state} across several
+steps, which lets it pursue a multi-step plan. Second, it has access
+to a set of tools --- search engines, databases, code interpreters,
+custom \acs{API}s --- that ground its reasoning in the external world
+and allow side effects beyond text generation. Third, it autonomously
+decides when the task is complete and returns control.
+
+\subsection{The ReAct Framework}
+The \textbf{ReAct} pattern (\emph{Reason} $+$ \emph{Act}), introduced by
+Yao \emph{et~al.} in 2022~\cite{yao2023react}, is the canonical
+instantiation of the agent loop. As sketched in Figure~\ref{fig:react},
+the model alternates between three kinds of step interleaved in a
+single autoregressive trace: \emph{Thought}, in which it verbalises its
+reasoning in natural language; \emph{Action}, in which it emits a
+structured tool call parsed from its output; and \emph{Observation},
+in which the result of the tool call is fed back into the prompt before
+the next thought. The loop continues until the agent decides to commit
+to a final answer. Compared with chain-of-thought reasoning alone, the
+explicit observation channel grounds the chain in factual evidence and
+substantially reduces hallucination on tasks that require external
+information.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        font=\small,
+        every node/.style={align=center},
+        block/.style={rectangle, rounded corners, draw=black!70, thick,
+            minimum height=0.8cm, minimum width=2.6cm,
+            inner sep=4pt, font=\small},
+        query/.style={block, fill=gray!15},
+        thought/.style={block, fill=yellow!22},
+        action/.style={block, fill=blue!18},
+        obs/.style={block, fill=green!18},
+        ans/.style={block, fill=red!22, font=\small\bfseries},
+        a/.style={-{Latex[length=2mm]}, thick}
+    ]
+        \node[query]                       (q)  {User query};
+        \node[thought, below=0.55cm of q]  (t)  {Thought};
+        \node[action,  below=0.55cm of t]  (ac) {Action (tool call)};
+        \node[obs,     below=0.55cm of ac] (o)  {Observation};
+        \node[ans,     below=0.7cm of o]   (an) {Final answer};
+
+        \draw[a] (q)  -- (t);
+        \draw[a] (t)  -- (ac);
+        \draw[a] (ac) -- (o);
+        \draw[a, dashed] (o) -- (an);
+        \draw[a] (o.east) to[bend right=80] node[right, font=\scriptsize\itshape, xshift=2pt]{loop until done} (t.east);
+    \end{tikzpicture}
+    \caption{ReAct thought--action--observation loop.}
+    \label{fig:react}
+\end{figure}
+
+\subsection{Multi-Agent Orchestration}
+A single agent rarely covers the breadth of a real product. Three
+families of multi-agent frameworks coexist:
+\begin{itemize}
+    \item \emph{Crew-based} frameworks structure the collaboration as
+        a team with explicit roles and a sequential or hierarchical
+        workflow.
+    \item \emph{Conversational} frameworks model agents as
+        participants whose interactions are themselves driven by a
+        language model.
+    \item \emph{State-machine} frameworks express the multi-agent
+        process as a typed graph whose nodes are agent invocations
+        and whose edges are conditional transitions, which makes the
+        dialogue auditable and the branching deterministic.
+\end{itemize}
+
+\subsection{Agent Communication Contracts}
+Two open specifications dominate the discussion:
+\begin{itemize}
+    \item The \emph{Model Context Protocol} (\acs{MCP}), introduced
+        in late~2024, describes how a host application exposes tools,
+        resources and prompts to a language-model-driven client.
+    \item The \emph{Agent-to-Agent} (\acs{A2A}) protocol, proposed in
+        2025, governs how peer agents discover each other through
+        \emph{AgentCards} and exchange tasks and task results,
+        typically over HTTP and JSON-RPC.
+\end{itemize}
+\noindent Both protocols decouple agent identity from transport, which
+makes the message contract an independent design artefact.
+
+\section{Knowledge Graphs and Graph-Augmented Retrieval}
+
+This section defines knowledge graphs, recalls the standard
+retrieval-augmented-generation recipe and presents Graph RAG, the two
+grounding mechanisms HireFlow uses to mitigate hallucination.
+
+\subsection{Knowledge Graphs}
+A \emph{knowledge graph} (\acs{KG}) represents domain knowledge as a
+labelled directed graph in which nodes are entities and edges are typed
+relationships, traditionally as subject--predicate--object triples
+inherited from \acs{RDF}. Knowledge graphs constrain the answers of a
+generative model to facts present in the graph and expose multi-hop
+relationships that a flat document index cannot represent.
+
+\subsection{Retrieval-Augmented Generation}
+\emph{Retrieval-Augmented Generation} (\acs{RAG}) injects external
+evidence into the prompt of a language model at inference time. In its simplest
+form, the corpus is split into chunks, each chunk is embedded with a
+sentence encoder and indexed in a vector store; at query time, the
+top-$k$ chunks are retrieved by cosine similarity and concatenated to
+the prompt. Naive RAG performs well on short factual lookups but
+degrades on multi-hop questions and on entity-centric queries.
+
+\subsection{Graph RAG}
+\textbf{Graph RAG}~\cite{edge2024graphrag} replaces the flat chunk
+index with a graph of entities and their relationships extracted from
+the corpus by a language model and clustered into communities.
+Retrieval becomes a graph traversal that returns a coherent subgraph,
+possibly augmented with hierarchical community summaries, which
+measurably outperforms naive RAG on global questions that require
+integrating information across many documents.
+
+\section{Candidate--Job Matching}
+
+This section traces the progression of candidate--job matching from
+bag-of-words retrieval to dense semantic similarity, topic-aware
+hierarchical attention, graph neural networks and constraint-aware
+shortlisting.
+
+\subsection{Sentence Embeddings and Semantic Similarity}
+The first generation of automated candidate screening relied on
+bag-of-words retrieval (TF-IDF, BM25), which scores a resume against a
+job description by counting overlapping terms and is therefore blind to
+synonymy and context. \textbf{Sentence-BERT}~\cite{reimers2019sbert}
+replaces lexical overlap with semantic similarity through a twin-encoder
+fine-tuning of \acs{BERT} that produces fixed-size sentence vectors
+directly comparable with cosine similarity, and the family has since
+produced compact and multilingual variants used at scale.
+
+\subsection{Topic-Aware Person--Job Fit (TAPJFNN)}
+The \emph{person--job fit} literature frames the matching problem as a
+binary classification: given a job description and a resume, predict
+whether the candidate is a good fit. \textbf{TAPJFNN}
+(\emph{Topic-Aware Person--Job Fit Neural
+Network})~\cite{qin2020tapjfnn} is the state-of-the-art representative
+of the family. It combines a four-level hierarchical attention with a
+topic-aware mechanism in which a corpus-level latent topic model
+modulates the higher attention weights so that the network focuses on
+the sentences that align with the dominant topic of the job.
+Figure~\ref{fig:tapjfnn} sketches the four-level hierarchy applied
+symmetrically to the job and to the resume.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        font=\small,
+        every node/.style={align=center},
+        word/.style={rectangle, rounded corners=2pt, draw=black!50,
+            fill=gray!10, minimum height=0.45cm, minimum width=0.7cm,
+            inner sep=2pt, font=\scriptsize},
+        sent/.style={rectangle, rounded corners=3pt, draw=black!60,
+            fill=blue!10, minimum height=0.5cm, minimum width=1.4cm,
+            inner sep=2pt, font=\scriptsize},
+        sec/.style={rectangle, rounded corners=3pt, draw=black!60,
+            fill=green!12, minimum height=0.55cm, minimum width=1.5cm,
+            inner sep=2pt, font=\scriptsize},
+        doc/.style={rectangle, rounded corners=3pt, draw=black!70,
+            thick, fill=orange!18, minimum height=0.65cm,
+            minimum width=2.0cm, inner sep=2pt, font=\scriptsize\bfseries},
+        match/.style={rectangle, rounded corners=4pt, draw=black!80,
+            thick, fill=red!15, minimum height=0.85cm,
+            minimum width=2.5cm, inner sep=3pt, font=\small\bfseries},
+        topic/.style={ellipse, draw=black!50, fill=yellow!22,
+            minimum width=2.6cm, minimum height=0.75cm, font=\scriptsize},
+        attn/.style={midway, font=\scriptsize\itshape, fill=white,
+            inner sep=1pt},
+        a/.style={-{Latex[length=1.6mm]}, thin}
+    ]
+        \node[word] (jw1) at (-6.6, 0)   {w};
+        \node[word] (jw2) at (-5.9, 0)   {w};
+        \node[word] (jw3) at (-5.2, 0)   {w};
+        \node[word] (jw4) at (-4.5, 0)   {w};
+        \node[sent] (js1) at (-6.25, 1.0) {sent};
+        \node[sent] (js2) at (-4.85, 1.0) {sent};
+        \node[sec]  (jc1) at (-6.25, 2.0) {ability};
+        \node[sec]  (jc2) at (-4.85, 2.0) {ability};
+        \node[doc]  (jd)  at (-5.55, 3.1) {Job vector};
+
+        \node[word] (rw1) at ( 4.5, 0)   {w};
+        \node[word] (rw2) at ( 5.2, 0)   {w};
+        \node[word] (rw3) at ( 5.9, 0)   {w};
+        \node[word] (rw4) at ( 6.6, 0)   {w};
+        \node[sent] (rs1) at ( 4.85, 1.0) {sent};
+        \node[sent] (rs2) at ( 6.25, 1.0) {sent};
+        \node[sec]  (rc1) at ( 4.85, 2.0) {exp.};
+        \node[sec]  (rc2) at ( 6.25, 2.0) {exp.};
+        \node[doc]  (rd)  at ( 5.55, 3.1) {Resume vector};
+
+        \node[topic] (tp) at (0, 1.5) {LDA topic\\distribution};
+
+        \node[match] (mm) at (0, 3.7) {Fit score};
+        \node[font=\scriptsize\itshape] at (0, 4.5) {head $\delta$};
+
+        \draw[a] (jw1) -- (js1);
+        \draw[a] (jw2) -- (js1);
+        \draw[a] (jw3) -- (js2);
+        \draw[a] (jw4) -- (js2);
+        \draw[a] (js1) -- (jc1) node[attn, near end]{$\alpha$};
+        \draw[a] (js2) -- (jc2);
+        \draw[a] (jc1) -- (jd) node[attn, near end]{$\beta$};
+        \draw[a] (jc2) -- (jd) node[attn, near end]{$\gamma$};
+
+        \draw[a] (rw1) -- (rs1);
+        \draw[a] (rw2) -- (rs1);
+        \draw[a] (rw3) -- (rs2);
+        \draw[a] (rw4) -- (rs2);
+        \draw[a] (rs1) -- (rc1) node[attn, near end]{$\alpha$};
+        \draw[a] (rs2) -- (rc2);
+        \draw[a] (rc1) -- (rd) node[attn, near end]{$\beta$};
+        \draw[a] (rc2) -- (rd) node[attn, near end]{$\gamma$};
+
+        \draw[a, dashed, gray!70] (tp) -- (jc1);
+        \draw[a, dashed, gray!70] (tp) -- (jc2);
+        \draw[a, dashed, gray!70] (tp) -- (rc1);
+        \draw[a, dashed, gray!70] (tp) -- (rc2);
+
+        \draw[a, thick] (jd) -- (mm);
+        \draw[a, thick] (rd) -- (mm);
+    \end{tikzpicture}
+    \caption{TAPJFNN four-level topic-aware hierarchical attention.}
+    \label{fig:tapjfnn}
+\end{figure}
+
+\subsection{Latent Dirichlet Allocation}
+The topic distributions used by TAPJFNN are produced offline by
+\emph{Latent Dirichlet Allocation}~\cite{blei2003lda}, the canonical
+generative topic model. LDA assumes that each document is a mixture of
+a small number of latent topics and that each topic is in turn a
+distribution over words; the two distributions are inferred jointly
+through approximate inference.
+
+\subsection{Graph Neural Networks}
+A \emph{graph neural network} (GNN) generalises the convolution
+operator from regular grids to arbitrary graphs. Each node holds a
+feature vector, and the network repeatedly updates that vector by
+aggregating messages from its neighbours, followed by a transformation
+shared across the graph; after $L$ such layers, the representation of
+a node summarises an $L$-hop neighbourhood. Figure~\ref{fig:gnn}
+sketches one round of message passing on a bipartite candidate--job
+graph. Three operator families dominate: \acs{GCN} uses a fixed symmetric
+normalisation, \acs{GAT} replaces the fixed weights with learned
+attention coefficients per edge, and \acs{GIN} uses an injective
+aggregation that maximises graph-classification power.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        font=\small,
+        every node/.style={align=center},
+        cnode/.style={circle, draw=black!70, thick, fill=blue!18,
+            minimum size=0.75cm, inner sep=0pt, font=\scriptsize\bfseries},
+        jnode/.style={circle, draw=black!70, thick, fill=orange!22,
+            minimum size=0.75cm, inner sep=0pt, font=\scriptsize\bfseries},
+        msg/.style={-{Latex[length=1.7mm]}, thick, blue!60},
+        plain/.style={gray!55, thick}
+    ]
+        \node[cnode] (c1) at (-3.5,  1.6) {C$_1$};
+        \node[cnode] (c2) at (-3.5,  0.0) {C$_2$};
+        \node[cnode] (c3) at (-3.5, -1.6) {C$_3$};
+        \node[jnode] (j1) at ( 1.5,  1.6) {J$_1$};
+        \node[jnode] (j2) at ( 1.5,  0.0) {J$_2$};
+        \node[jnode] (j3) at ( 1.5, -1.6) {J$_3$};
+
+        \draw[plain] (c1) -- (j1);
+        \draw[plain] (c1) -- (j2);
+        \draw[plain] (c2) -- (j1);
+        \draw[plain] (c2) -- (j2);
+        \draw[plain] (c2) -- (j3);
+        \draw[plain] (c3) -- (j2);
+        \draw[plain] (c3) -- (j3);
+
+        \draw[msg] (c1) -- (j2);
+        \draw[msg] (c2) -- (j2);
+        \draw[msg] (c3) -- (j2);
+
+        \node[rectangle, rounded corners, draw=black!70, thick,
+            fill=green!12, minimum width=4.4cm, minimum height=0.8cm,
+            font=\scriptsize, align=center] (upd)
+            at (5.4, 0) {AGGREGATE\\$+$ UPDATE};
+        \draw[msg] (j2) -- (upd);
+
+        \node[font=\scriptsize\itshape, anchor=north]
+            at (j2.south) [yshift=-0.6cm] {focus node};
+        \node[font=\scriptsize, anchor=west, gray!60]
+            at (-3.5, -2.4) {Candidates};
+        \node[font=\scriptsize, anchor=east, gray!60]
+            at ( 1.5, -2.4) {Jobs};
+    \end{tikzpicture}
+    \caption{GNN message passing on a bipartite candidate--job graph.}
+    \label{fig:gnn}
+\end{figure}
+
+\subsection{Genetic Algorithms for Constrained Shortlisting}
+A pure ranker returns a list of candidates ordered by predicted fit,
+but real shortlists must respect a set of operational constraints ---
+a budget on the number of interviews, a diversity target, role quotas
+and minimum-fit thresholds --- that do not factorise across candidates.
+\emph{Genetic algorithms} are a family of biology-inspired
+metaheuristics for combinatorial optimisation. A population of
+candidate solutions is iteratively transformed through three operators:
+\begin{itemize}
+    \item \emph{Selection} retains the highest-fitness individuals
+        for the next generation.
+    \item \emph{Crossover} combines two parent solutions into new
+        offspring.
+    \item \emph{Mutation} applies small random changes to maintain
+        diversity.
+\end{itemize}
+\noindent Constraints are typically enforced through a \emph{death
+penalty} that assigns zero fitness to infeasible solutions.
+Algorithm~\ref{alg:ga-shortlist} sketches the canonical loop applied to
+the shortlisting problem.
+
+\begin{algorithm}[H]
+\caption{Genetic algorithm for constrained shortlisting}
+\label{alg:ga-shortlist}
+\begin{algorithmic}[1]
+\Require Candidate pool $C$, fitness $f$, constraints $\Phi$, population size $N$, generations $T$
+\Ensure Best feasible shortlist $s^{\star}$
+\State Initialise population $P_0 \gets \{s_1, \dots, s_N\}$ at random
+\For{$t = 0$ \textbf{to} $T-1$}
+    \ForAll{$s \in P_t$}
+        \State $\hat{f}(s) \gets f(s) \cdot \mathbb{1}[\Phi(s) \text{ feasible}]$ \Comment{death penalty}
+    \EndFor
+    \State $P^{\text{sel}} \gets \textsc{Select}(P_t, \hat{f})$ \Comment{e.g.\ tournament or roulette}
+    \State $O \gets \textsc{Crossover}(P^{\text{sel}})$
+    \State $O \gets \textsc{Mutate}(O)$
+    \State $P_{t+1} \gets$ top-$N$ individuals of $P_t \cup O$ by $\hat{f}$
+\EndFor
+\State \Return $\arg\max_{s \in P_T} \hat{f}(s)$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Affective Computing and Speech Technologies}
+
+\subsection{Models of Emotion}
+The affective-computing community models emotion in two complementary
+ways:
+\begin{itemize}
+    \item A \emph{discrete} set of basic categories (happiness,
+        sadness, fear, anger, surprise, disgust, contempt, neutral),
+        traditionally attributed to Ekman.
+    \item A \emph{continuous} space whose two dominant axes are
+        \emph{valence} (pleasantness) and \emph{arousal} (activation),
+        known as Russell's circumplex.
+\end{itemize}
+\noindent The two representations coexist in production
+interview-analysis systems.
+
+\subsection{Facial Action Units and Landmarks}
+The \acs{FACS} decomposes any facial expression into a small set of
+\emph{Action Units} (\acsp{AU}) corresponding to individually
+contractible muscles (AU4 brow lowerer, AU12 lip corner puller). AUs
+are typically estimated from facial landmarks --- several hundred
+three-dimensional points predicted on the face at thirty frames per
+second --- rather than from raw pixels. Pose-estimation and
+hand-tracking models complete the perception channel by capturing body
+language and gesture.
+
+\subsection{Self-Supervised Speech Encoders}
+The dominant audio backbone today is \textbf{wav2vec~2.0}
+~\cite{baevski2020wav2vec}, a self-supervised model that learns
+speech representations directly from the raw audio waveform. A small
+downstream head transforms its contextual embedding into a
+task-specific output: transcript, emotion class, valence or arousal.
+
+\subsection{ASR, TTS and Voice-Activity Detection}
+The interview module relies on three complementary speech components:
+\begin{itemize}
+    \item \acs{ASR} replaces the historical \acs{HMM} pipeline with
+        end-to-end encoder--decoder transformers trained on weakly
+        supervised audio.
+    \item Neural \acs{TTS} has moved from autoregressive seq-to-seq
+        systems (Tacotron) to non-autoregressive flow-based models
+        such as VITS that run faster than real time on commodity
+        \acsp{CPU}.
+    \item \acs{VAD} decides whether speech is present in a short audio
+        window; modern neural VAD replaces the WebRTC filter with a
+        small recurrent network.
+\end{itemize}
+
+\section{Personalised Ranking}
+
+A single global ranker is a poor approximation of any one recruiter's
+preferences, since two recruiters weight cultural fit, technical depth
+and communication style differently. The most pragmatic personalisation
+model for a high-stakes hiring use case is \emph{logistic regression}:
+its coefficients are directly readable as feature weights and its
+calibrated probability output admits a natural confidence
+interpretation, which matters when the system operates under
+regulatory constraints.
+
+\section{Conclusion}
+
+This chapter laid the conceptual foundations of the work and surveyed
+the families of techniques on which the rest of the report builds. The
+next chapters detail, sprint by sprint, the design and implementation
+of the system that integrates them.

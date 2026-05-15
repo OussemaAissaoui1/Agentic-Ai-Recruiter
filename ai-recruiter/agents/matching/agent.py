@@ -121,12 +121,18 @@ class MatchingAgent(BaseAgent):
         detail["tapjfnn_loaded"] = p.tapjfnn is not None
         detail["gnn_loaded"] = p.gnn is not None
         detail["lda_loaded"] = p.lda_j is not None and p.lda_r is not None
+        if getattr(p, "tapjfnn_load_error", None):
+            detail["tapjfnn_load_error"] = p.tapjfnn_load_error
+        if getattr(p, "gnn_load_error", None):
+            detail["gnn_load_error"] = p.gnn_load_error
 
         if not detail["gnn_loaded"]:
-            reasons.append("GNN checkpoint missing — falling back to TAPJFNN/cosine")
+            why = p.gnn_load_error if getattr(p, "gnn_load_error", None) else "checkpoint missing"
+            reasons.append(f"GNN unavailable ({why}) — falling back to TAPJFNN/cosine")
             state = HealthState.FALLBACK
         if not detail["tapjfnn_loaded"]:
-            reasons.append("TAPJFNN checkpoint missing — falling back to cosine")
+            why = p.tapjfnn_load_error if getattr(p, "tapjfnn_load_error", None) else "checkpoint missing"
+            reasons.append(f"TAPJFNN unavailable ({why}) — falling back to cosine")
             state = HealthState.FALLBACK
         if not detail["lda_loaded"]:
             reasons.append("LDA models missing — TAPJFNN topic attention disabled")

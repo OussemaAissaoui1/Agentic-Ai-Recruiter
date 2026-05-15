@@ -6,9 +6,13 @@ import {
   Briefcase as BIcon,
   DollarSign,
   Calendar,
+  Loader2,
+  Lock,
+  Unlock,
 } from "lucide-react";
-import { useApplications, useJob } from "@/lib/queries";
+import { useApplications, useJob, useUpdateJob } from "@/lib/queries";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import type { Application } from "@/lib/api";
 
 export const Route = createFileRoute("/app/jobs/$id")({
@@ -38,6 +42,28 @@ function JobDetail() {
   const { id } = Route.useParams();
   const { data: job, isLoading, isError } = useJob(id);
   const { data: apps = [] } = useApplications({ job_id: id });
+  const updateJob = useUpdateJob(id);
+
+  const onToggleStatus = async () => {
+    if (!job) return;
+    const next = job.status === "open" ? "closed" : "open";
+    if (next === "closed") {
+      const ok = window.confirm(
+        `Close "${job.title}"? Candidates won't be able to discover or apply to this role anymore. Existing applicants keep their status — they can still finish interviews. You can reopen it later.`,
+      );
+      if (!ok) return;
+    }
+    try {
+      await updateJob.mutateAsync({ status: next });
+      toast.success(
+        next === "closed"
+          ? `Closed "${job.title}". New applications are blocked.`
+          : `Reopened "${job.title}". Candidates can apply again.`,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   if (isLoading) {
     return (
@@ -58,17 +84,54 @@ function JobDetail() {
 
   return (
     <div className="space-y-8">
-      <Link
-        to="/app/jobs"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> All jobs
-      </Link>
+      <div className="flex items-center justify-between gap-4">
+        <Link
+          to="/app/jobs"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> All jobs
+        </Link>
+        <button
+          onClick={onToggleStatus}
+          disabled={updateJob.isPending}
+          className={`press-tight inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-transform hover:scale-[1.02] disabled:opacity-60 ${
+            job.status === "open"
+              ? "border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
+              : "border border-success/40 bg-success/15 text-success-foreground hover:bg-success/20"
+          }`}
+          title={
+            job.status === "open"
+              ? "Close this role to new applicants"
+              : "Reopen this role"
+          }
+        >
+          {updateJob.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : job.status === "open" ? (
+            <Lock className="h-3.5 w-3.5" />
+          ) : (
+            <Unlock className="h-3.5 w-3.5" />
+          )}
+          {job.status === "open" ? "Close this role" : "Reopen role"}
+        </button>
+      </div>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <div>
-            <div className="text-xs uppercase tracking-widest text-muted-foreground">{job.team}</div>
-            <h1 className="font-display mt-1 text-4xl tracking-tight">{job.title}</h1>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
+              <span>{job.team}</span>
+              <span aria-hidden>·</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  job.status === "open"
+                    ? "bg-success/20 text-success-foreground"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {job.status === "open" ? "Open" : "Closed"}
+              </span>
+            </div>
+            <h1 className="font-display mt-1 text-3xl tracking-tight">{job.title}</h1>
             <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 <MapPin className="h-4 w-4" />

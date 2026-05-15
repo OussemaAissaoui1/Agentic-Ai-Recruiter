@@ -16,10 +16,13 @@ import { Route as CIndexRouteImport } from './routes/c.index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as CProfileRouteImport } from './routes/c.profile'
 import { Route as CApplicationsRouteImport } from './routes/c.applications'
+import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppRadarRouteImport } from './routes/app.radar'
+import { Route as AppExplorerRouteImport } from './routes/app.explorer'
 import { Route as AppApplicantsRouteImport } from './routes/app.applicants'
 import { Route as AppAnalyticsRouteImport } from './routes/app.analytics'
 import { Route as AppJobsIndexRouteImport } from './routes/app.jobs.index'
+import { Route as CJobsIdRouteImport } from './routes/c.jobs.$id'
 import { Route as CInterviewIdRouteImport } from './routes/c.interview.$id'
 import { Route as CApplyIdRouteImport } from './routes/c.apply.$id'
 import { Route as AppJobsNewRouteImport } from './routes/app.jobs.new'
@@ -61,9 +64,19 @@ const CApplicationsRoute = CApplicationsRouteImport.update({
   path: '/applications',
   getParentRoute: () => CRoute,
 } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRadarRoute = AppRadarRouteImport.update({
   id: '/radar',
   path: '/radar',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppExplorerRoute = AppExplorerRouteImport.update({
+  id: '/explorer',
+  path: '/explorer',
   getParentRoute: () => AppRoute,
 } as any)
 const AppApplicantsRoute = AppApplicantsRouteImport.update({
@@ -80,6 +93,11 @@ const AppJobsIndexRoute = AppJobsIndexRouteImport.update({
   id: '/jobs/',
   path: '/jobs/',
   getParentRoute: () => AppRoute,
+} as any)
+const CJobsIdRoute = CJobsIdRouteImport.update({
+  id: '/jobs/$id',
+  path: '/jobs/$id',
+  getParentRoute: () => CRoute,
 } as any)
 const CInterviewIdRoute = CInterviewIdRouteImport.update({
   id: '/interview/$id',
@@ -113,7 +131,9 @@ export interface FileRoutesByFullPath {
   '/c': typeof CRouteWithChildren
   '/app/analytics': typeof AppAnalyticsRoute
   '/app/applicants': typeof AppApplicantsRoute
+  '/app/explorer': typeof AppExplorerRoute
   '/app/radar': typeof AppRadarRoute
+  '/app/settings': typeof AppSettingsRoute
   '/c/applications': typeof CApplicationsRoute
   '/c/profile': typeof CProfileRoute
   '/app/': typeof AppIndexRoute
@@ -122,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/app/jobs/new': typeof AppJobsNewRoute
   '/c/apply/$id': typeof CApplyIdRoute
   '/c/interview/$id': typeof CInterviewIdRoute
+  '/c/jobs/$id': typeof CJobsIdRoute
   '/app/jobs/': typeof AppJobsIndexRoute
   '/app/applicants/$id/report': typeof AppApplicantsIdReportRoute
 }
@@ -129,7 +150,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app/analytics': typeof AppAnalyticsRoute
   '/app/applicants': typeof AppApplicantsRoute
+  '/app/explorer': typeof AppExplorerRoute
   '/app/radar': typeof AppRadarRoute
+  '/app/settings': typeof AppSettingsRoute
   '/c/applications': typeof CApplicationsRoute
   '/c/profile': typeof CProfileRoute
   '/app': typeof AppIndexRoute
@@ -138,6 +161,7 @@ export interface FileRoutesByTo {
   '/app/jobs/new': typeof AppJobsNewRoute
   '/c/apply/$id': typeof CApplyIdRoute
   '/c/interview/$id': typeof CInterviewIdRoute
+  '/c/jobs/$id': typeof CJobsIdRoute
   '/app/jobs': typeof AppJobsIndexRoute
   '/app/applicants/$id/report': typeof AppApplicantsIdReportRoute
 }
@@ -148,7 +172,9 @@ export interface FileRoutesById {
   '/c': typeof CRouteWithChildren
   '/app/analytics': typeof AppAnalyticsRoute
   '/app/applicants': typeof AppApplicantsRoute
+  '/app/explorer': typeof AppExplorerRoute
   '/app/radar': typeof AppRadarRoute
+  '/app/settings': typeof AppSettingsRoute
   '/c/applications': typeof CApplicationsRoute
   '/c/profile': typeof CProfileRoute
   '/app/': typeof AppIndexRoute
@@ -157,6 +183,7 @@ export interface FileRoutesById {
   '/app/jobs/new': typeof AppJobsNewRoute
   '/c/apply/$id': typeof CApplyIdRoute
   '/c/interview/$id': typeof CInterviewIdRoute
+  '/c/jobs/$id': typeof CJobsIdRoute
   '/app/jobs/': typeof AppJobsIndexRoute
   '/app/applicants_/$id/report': typeof AppApplicantsIdReportRoute
 }
@@ -168,7 +195,9 @@ export interface FileRouteTypes {
     | '/c'
     | '/app/analytics'
     | '/app/applicants'
+    | '/app/explorer'
     | '/app/radar'
+    | '/app/settings'
     | '/c/applications'
     | '/c/profile'
     | '/app/'
@@ -177,6 +206,7 @@ export interface FileRouteTypes {
     | '/app/jobs/new'
     | '/c/apply/$id'
     | '/c/interview/$id'
+    | '/c/jobs/$id'
     | '/app/jobs/'
     | '/app/applicants/$id/report'
   fileRoutesByTo: FileRoutesByTo
@@ -184,7 +214,9 @@ export interface FileRouteTypes {
     | '/'
     | '/app/analytics'
     | '/app/applicants'
+    | '/app/explorer'
     | '/app/radar'
+    | '/app/settings'
     | '/c/applications'
     | '/c/profile'
     | '/app'
@@ -193,6 +225,7 @@ export interface FileRouteTypes {
     | '/app/jobs/new'
     | '/c/apply/$id'
     | '/c/interview/$id'
+    | '/c/jobs/$id'
     | '/app/jobs'
     | '/app/applicants/$id/report'
   id:
@@ -202,7 +235,9 @@ export interface FileRouteTypes {
     | '/c'
     | '/app/analytics'
     | '/app/applicants'
+    | '/app/explorer'
     | '/app/radar'
+    | '/app/settings'
     | '/c/applications'
     | '/c/profile'
     | '/app/'
@@ -211,6 +246,7 @@ export interface FileRouteTypes {
     | '/app/jobs/new'
     | '/c/apply/$id'
     | '/c/interview/$id'
+    | '/c/jobs/$id'
     | '/app/jobs/'
     | '/app/applicants_/$id/report'
   fileRoutesById: FileRoutesById
@@ -272,11 +308,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CApplicationsRouteImport
       parentRoute: typeof CRoute
     }
+    '/app/settings': {
+      id: '/app/settings'
+      path: '/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/radar': {
       id: '/app/radar'
       path: '/radar'
       fullPath: '/app/radar'
       preLoaderRoute: typeof AppRadarRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/explorer': {
+      id: '/app/explorer'
+      path: '/explorer'
+      fullPath: '/app/explorer'
+      preLoaderRoute: typeof AppExplorerRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/applicants': {
@@ -299,6 +349,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/jobs/'
       preLoaderRoute: typeof AppJobsIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/c/jobs/$id': {
+      id: '/c/jobs/$id'
+      path: '/jobs/$id'
+      fullPath: '/c/jobs/$id'
+      preLoaderRoute: typeof CJobsIdRouteImport
+      parentRoute: typeof CRoute
     }
     '/c/interview/$id': {
       id: '/c/interview/$id'
@@ -341,7 +398,9 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppApplicantsRoute: typeof AppApplicantsRoute
+  AppExplorerRoute: typeof AppExplorerRoute
   AppRadarRoute: typeof AppRadarRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppJobsIdRoute: typeof AppJobsIdRoute
   AppJobsNewRoute: typeof AppJobsNewRoute
@@ -352,7 +411,9 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAnalyticsRoute: AppAnalyticsRoute,
   AppApplicantsRoute: AppApplicantsRoute,
+  AppExplorerRoute: AppExplorerRoute,
   AppRadarRoute: AppRadarRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppJobsIdRoute: AppJobsIdRoute,
   AppJobsNewRoute: AppJobsNewRoute,
@@ -368,6 +429,7 @@ interface CRouteChildren {
   CIndexRoute: typeof CIndexRoute
   CApplyIdRoute: typeof CApplyIdRoute
   CInterviewIdRoute: typeof CInterviewIdRoute
+  CJobsIdRoute: typeof CJobsIdRoute
 }
 
 const CRouteChildren: CRouteChildren = {
@@ -376,6 +438,7 @@ const CRouteChildren: CRouteChildren = {
   CIndexRoute: CIndexRoute,
   CApplyIdRoute: CApplyIdRoute,
   CInterviewIdRoute: CInterviewIdRoute,
+  CJobsIdRoute: CJobsIdRoute,
 }
 
 const CRouteWithChildren = CRoute._addFileChildren(CRouteChildren)
