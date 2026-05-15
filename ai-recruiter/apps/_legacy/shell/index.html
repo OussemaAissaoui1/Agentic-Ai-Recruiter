@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AI Recruiter — Platform Shell</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0; min-height: 100vh;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0;
+    display: flex; flex-direction: column;
+  }
+  header { padding: 2.5rem 2rem 1rem; }
+  header h1 { margin: 0 0 .5rem; font-size: 2rem; letter-spacing: -.02em; }
+  header p { margin: 0; color: #94a3b8; max-width: 60ch; }
+  main {
+    padding: 1.5rem 2rem 2.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+    flex: 1;
+  }
+  a.card {
+    display: block; padding: 1.5rem;
+    background: rgba(30,41,59,.7);
+    border: 1px solid #334155; border-radius: 12px;
+    color: inherit; text-decoration: none;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  a.card:hover { transform: translateY(-2px); border-color: #6366f1; background: rgba(30,41,59,.9); }
+  a.card h2 { margin: 0 0 .25rem; font-size: 1.15rem; }
+  a.card .tag { display: inline-block; padding: .15rem .5rem; border-radius: 999px;
+    font-size: .7rem; background: #1e293b; color: #94a3b8; margin-bottom: .75rem;
+    border: 1px solid #334155; }
+  a.card p { margin: 0; color: #94a3b8; line-height: 1.5; }
+  footer { padding: 1.25rem 2rem; color: #64748b; font-size: .8rem;
+    border-top: 1px solid #1e293b; }
+  footer a { color: #94a3b8; }
+  code { background: #1e293b; padding: .1rem .35rem; border-radius: 4px; font-size: .85em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Recruiter</h1>
+  <p>One platform, three stages. Pre-screen CVs against a JD, run a multimodal
+     interview with an AI recruiter avatar, and stream behavioral analysis from
+     the candidate's webcam in real time.</p>
+</header>
+
+<main>
+  <a class="card" href="/screening/">
+    <span class="tag">Stage 1 — pre-interview</span>
+    <h2>CV Screening</h2>
+    <p>Upload a JD and a batch of CVs. The matching agent ranks every candidate
+       (TAPJFNN + GNN), extracts hiring signals via LLM, and runs a
+       constraint-aware GA shortlist.</p>
+  </a>
+
+  <a class="card" href="/interview/">
+    <span class="tag">Stage 2 — live interview</span>
+    <h2>AI Interview</h2>
+    <p>Talk to Alex, the AI recruiter (Llama-3.1-8B + scorer + refiner + TTS).
+       The vision agent records the candidate's webcam in parallel and streams
+       behavioral signals back on top of the chat.</p>
+  </a>
+
+  <a class="card" href="/behavior/">
+    <span class="tag">Stage 3 — analytics</span>
+    <h2>Behavioral Dashboard</h2>
+    <p>Real-time dashboard for the vision agent's 4-D profile: cognitive load,
+       emotional arousal, engagement, confidence — plus PDF/JSON reports per
+       interview session.</p>
+  </a>
+</main>
+
+<footer>
+  <span>API:</span> <code>GET /api/health</code> &middot;
+  <code>GET /.well-known/agents/&lt;name&gt;</code> &middot;
+  <a href="/docs">/docs</a>
+</footer>
+</body>
+</html>

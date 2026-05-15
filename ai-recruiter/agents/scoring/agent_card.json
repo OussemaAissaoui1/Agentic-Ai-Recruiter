@@ -1,0 +1,17 @@
+{
+  "name": "scoring",
+  "version": "0.3.0",
+  "description": "Generates a per-answer + overall hiring report from a completed interview using Groq llama-3.3-70b-versatile. Reads from the recruit SQLite DB and persists report.json + report.md to artifacts/scoring.",
+  "transports": ["http"],
+  "routes": [
+    "/api/scoring/health",
+    "/api/scoring/{interview_id}/run",
+    "/api/scoring/{interview_id}/report",
+    "/api/scoring/{interview_id}/report.md"
+  ],
+  "capabilities": [
+    {"name": "score_interview", "description": "Run scoring for an interview (or return cached report)."},
+    {"name": "get_report", "description": "Return cached InterviewReport JSON."},
+    {"name": "delete_report", "description": "Drop cached report so the next run regenerates."}
+  ]
+}

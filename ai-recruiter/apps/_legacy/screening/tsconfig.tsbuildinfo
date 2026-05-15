@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/components/CVUpload.tsx","./src/components/CandidateMetadataForm.tsx","./src/components/GAConstraintsForm.tsx","./src/components/JobDescriptionInput.tsx","./src/components/RankingResults.tsx"],"version":"5.9.3"}

@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Tuple, Optional, Dict, Any
 import logging
+import os
 
 from agent import NLPAgent, QuestionGenerationRequest, QuestionGenerationResponse
 
@@ -59,7 +60,7 @@ class GenerateQuestionRequest(BaseModel):
     candidate_latest_answer: str = Field(
         ..., description="Candidate's most recent answer"
     )
-    max_tokens: int = Field(default=48, ge=1, le=100, description="Max tokens to generate")
+    max_tokens: int = Field(default=48, ge=1, le=256, description="Max tokens to generate")
     temperature: float = Field(default=0.6, ge=0.0, le=2.0, description="Sampling temperature")
 
 
@@ -117,6 +118,7 @@ async def startup_event():
     try:
         nlp_agent = NLPAgent(
             use_compact_prompt=False,  # Use full randomized prompts
+            max_model_len=int(os.environ.get("NLP_MAX_MODEL_LEN", "8192")),
         )
         logger.info("✅ NLP Agent initialized successfully")
     except Exception as e:

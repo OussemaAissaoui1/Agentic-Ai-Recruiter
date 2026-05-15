@@ -552,7 +552,7 @@ class VLLMRecruiterEngine:
         history: List[Tuple[str, str]],
         candidate_input: str,
         instruction: Optional[str] = None,
-        max_tokens: int = 48,
+        max_tokens: int = 96,
         temperature: float = 0.6,
         top_p: float = 0.85,
         repetition_penalty: float = 1.15,
@@ -607,7 +607,7 @@ class VLLMRecruiterEngine:
         history: List[Tuple[str, str]],
         candidate_input: str,
         instruction: Optional[str] = None,
-        max_tokens: int = 48,
+        max_tokens: int = 96,
         temperature: float = 0.6,
         top_p: float = 0.85,
         repetition_penalty: float = 1.15,
@@ -653,6 +653,56 @@ class VLLMRecruiterEngine:
         c = re.sub(r"<think>.*?</think>", "", c, flags=re.DOTALL)
         c = c.strip()
 
+        # Strip a leading transcript-metadata block of the form:
+        #   "**Date:** July 25, 2024 **Location:** Online ... **Interviewer:** Alex"
+        # Small instruction-tuned models slip into this on the opening turn
+        # (no prior history → fall back to "render an interview header").
+        # The leak-head detector silences live forwarding, but the metadata
+        # still survives the rest of the cleaner because the bolds are inline,
+        # not on their own lines. We strip 1+ chained "**Label:** value" pairs
+        # at the very start of the response.
+        c = re.sub(
+            r"^(?:\s*\*\*\s*[A-Za-z][A-Za-z &/-]{0,30}\s*:\s*\*\*[^*\n]{0,120})+",
+            "",
+            c,
+        ).strip()
+
+        # If the model slipped into transcript-roleplay (markdown title or
+        # third-person narration intro), recover by finding the first Alex
+        # line and using only its utterance — that's the actual recruiter turn.
+        looks_like_transcript = (
+            re.search(r"\*\*\s*interview\s+transcript\s*\*\*", c, re.IGNORECASE)
+            or re.match(
+                r"^\s*(this transcript|the following is|in this conversation|"
+                r"below is a|below is an|this is a transcript|this is an interview|"
+                r"the conversation below|this interview|this simulates)",
+                c, re.IGNORECASE,
+            )
+        )
+        if looks_like_transcript:
+            m = re.search(r"^\s*alex\s*:\s*(.*)", c, re.IGNORECASE | re.MULTILINE)
+            if m:
+                c = m.group(1).strip()
+            else:
+                # No recoverable Alex line — drop everything up to the first
+                # paragraph break and rely on later pipeline stages to retry.
+                parts = re.split(r"\n\s*\n", c, maxsplit=1)
+                c = parts[1].strip() if len(parts) > 1 else ""
+
+        # Strip stray markdown headers / titles that survived recovery.
+        c = re.sub(r"^\s*#{1,6}\s.*?$", "", c, flags=re.MULTILINE)
+        c = re.sub(r"^\s*\*\*[^*\n]{1,80}\*\*\s*$", "", c, flags=re.MULTILINE)
+        c = re.sub(r"^\s*-{3,}\s*$", "", c, flags=re.MULTILINE)
+        c = c.strip()
+
+        # Strip a leading speaker label ("Alex:", "Interviewer:", "Recruiter:", "Me:").
+        # Apply repeatedly to handle "Alex:\n\nAlex:" doubles.
+        for _ in range(3):
+            c = re.sub(
+                r"^\s*(?:alex|interviewer|recruiter|me|host)\s*:\s*",
+                "", c, flags=re.IGNORECASE,
+            ).lstrip()
+
         # Strip meta-commentary prefixes like "Here's how I'd respond:"
         for prefix in ("here's how i'd respond:", "here's my response:",
                        "here is my response:", "here's how i would respond:",
@@ -672,10 +722,15 @@ class VLLMRecruiterEngine:
             i = c.find(m)
             if i != -1:
                 c = c[:i].strip()
-        for p in ("candidate:", "user:", "human:"):
+        for p in ("candidate:", "user:", "human:", "interviewee:", "applicant:"):
             i = c.lower().find(p)
             if i != -1:
                 c = c[:i].strip()
+        # Generic "<Name>:" at start of a new line — anything that isn't Alex
+        # is the model speaking for the candidate. Cut at the first such label.
+        m = re.search(r"\n\s*(?!alex\s*:)[A-Z][a-zA-Z][a-zA-Z\s'-]{0,30}:\s", c)
+        if m:
+            c = c[:m.start()].strip()
 
         # Strip post-interview notes / internal monologue
         cl = c.lower()
@@ -720,3 +775,37 @@ class VLLMRecruiterEngine:
     def is_generic_question(self, text: str) -> bool:
         tl = text.lower()
         return any(m in tl for m in self.GENERIC_QUESTION_MARKERS)
+
+    # Patterns that signal the model has slipped into transcript-roleplay or
+    # narration mode. Anchored at start of stream so we can decide whether to
+    # forward live tokens or hold-and-clean before emitting anything.
+    _LEAK_HEAD_PATTERNS = (
+        re.compile(r"^\s*\*\*"),                     # markdown bold/title
+        re.compile(r"^\s*#{1,6}\s"),                 # markdown header
+        re.compile(r"^\s*-{3,}\s*$", re.MULTILINE),  # divider
+        re.compile(r"^\s*\[[A-Za-z]"),               # stage direction "[Smiles..."
+        re.compile(
+            r"^\s*(this transcript|the following is|in this conversation|"
+            r"below is a|below is an|this is a transcript|"
+            r"this is an interview|the conversation below|"
+            r"this interview|this simulates|here['’]s how i|"
+            r"here['’]s my response|i would say|my response:)",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^\s*(alex|interviewer|recruiter|host|me)\s*:",
+            re.IGNORECASE,
+        ),
+    )
+
+    def looks_like_leak_head(self, head: str) -> bool:
+        """True if the head of the stream is going to be a transcript leak.
+
+        Called from streaming code after enough tokens have arrived to make
+        the call (~40-60 chars). When True, the streaming layer should
+        hold the rest of the stream silently and emit only the result of
+        `_clean_response` once generation completes.
+        """
+        if not head:
+            return False
+        return any(p.search(head) for p in self._LEAK_HEAD_PATTERNS)

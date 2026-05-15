@@ -1,0 +1,34 @@
+{
+  "name": "vision",
+  "version": "0.2.0",
+  "description": "Real-time multimodal behavioral analysis. MediaPipe FaceMesh + Pose + Hands → 20-D AU/gaze + 12-D pose features; HSEmotion EfficientNet → valence/arousal; Wav2Vec2 + StudentNet → audio stress (StudentNet head is fallback when weights are absent). Welford 45s personal-baseline calibration. Multi-dimension fusion → Cognitive Load / Emotional Arousal / Engagement Level / Confidence Level. Session aggregator + PDF/JSON reports.",
+  "transports": ["http", "websocket"],
+  "routes": [
+    "/api/vision/health",
+    "/api/vision/session/start",
+    "/api/vision/session/{session_id}/question",
+    "/api/vision/report/{session_id}",
+    "/api/vision/report/{session_id}/pdf",
+    "/ws/vision"
+  ],
+  "capabilities": [
+    {
+      "name": "start_session",
+      "description": "Create a new behavioral-analysis session with calibration timer.",
+      "input_schema": {"type": "object", "properties": {"candidate_id": {"type": "string"}}},
+      "output_schema": {"type": "object", "properties": {"session_id": {"type": "string"}}}
+    },
+    {
+      "name": "mark_question",
+      "description": "Annotate the timeline with an interviewer question label at now().",
+      "input_schema": {"type": "object", "required": ["session_id", "label"]},
+      "output_schema": {"type": "object", "properties": {"timestamp": {"type": "number"}}}
+    },
+    {
+      "name": "get_report",
+      "description": "Return the JSON behavioral report for a session.",
+      "input_schema": {"type": "object", "required": ["session_id"]},
+      "output_schema": {"type": "object", "properties": {"report": {"type": "object"}}}
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+# GPU OCR install for the matching backend.
+#
+# Use INSTEAD of (not in addition to) the paddle lines in requirements.txt.
+# Paddle's GPU wheels are not on PyPI — they live on the PaddlePaddle index.
+#
+# Pick ONE --extra-index-url line below to match your CUDA toolkit
+# (`nvidia-smi` → "CUDA Version" in the top-right corner). If unsure, try
+# cu126 first; modern Lightning / GCP GPU studios run CUDA 12.x.
+#
+# Install:
+#   pip uninstall -y paddlepaddle paddlepaddle-gpu
+#   pip install -r requirements-gpu.txt
+#
+# Verify GPU:
+#   python -c "import paddle; print(paddle.is_compiled_with_cuda(), \
+#                                     paddle.device.cuda.device_count())"
+# Should print:  True  1   (or however many GPUs you have)
+
+# CUDA 12.6 (default for L4 / RTX 6000 Pro / Hopper studios)
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+
+# Other CUDA versions — uncomment the matching line and comment cu126 above:
+# --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu123/
+# --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu118/
+
+# IMPORTANT: stay on paddlepaddle-gpu 3.0+. The 2.6.x line ships cuDNN 8 and
+# clashes with PyTorch 2.x's cuDNN 9 ABI inside the same process. Our worker
+# already runs paddle in a child process for cuDNN isolation, but you still
+# want 3.x for the modern API + cuDNN 9 build.
+paddlepaddle-gpu>=3.0.0
+paddleocr>=3.0.0

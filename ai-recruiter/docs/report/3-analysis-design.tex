@@ -1,0 +1,721 @@
+\begin{center}
+    \chapter{Analysis and Design}
+\end{center}
+\label{chap:analysisdesign}
+
+\section*{Introduction}
+
+The previous chapters introduced the host organisation, motivated the
+project and surveyed the state of the art on which HireFlow is built.
+The present chapter turns this groundwork into a concrete engineering
+plan. It first captures the functional and non-functional requirements
+through actor identification, a global use-case diagram and a quality
+matrix. It then frames the work in a Scrum cadence with a product
+backlog and a six-sprint roadmap. Finally, it lays out the physical,
+logical and multi-agent architectures of the platform together with
+the hardware and software environment that supports its delivery.
+
+\section{Requirements Analysis}
+
+This section enumerates who the platform serves, what it must do and
+under which quality constraints it must operate.
+
+\subsection{Identification of the Different Actors}
+
+Two categories of human actor interact with HireFlow, complemented
+by a handful of external technical actors whose behaviour the system
+has to integrate with.
+\begin{itemize}
+    \item \textbf{Recruiter} (primary): opens vacancies, drafts and
+    validates job descriptions, triggers candidate matching, launches
+    interviews, reviews scoring reports and refines the personalisation
+    signal. Most of the platform's value is delivered to this actor.
+    \item \textbf{Candidate} (primary): applies to a vacancy, uploads a
+    \acs{CV}, takes the conversational interview and consults the
+    outcome of the application. Interactions are designed to be
+    transparent and explainable.
+    \item \textbf{External \acs{AI} services} (supporting): the vLLM
+    server, the Groq inference endpoint, and the speech models
+    (Kokoro \acs{TTS}, Moonshine \acs{ASR}) participate as
+    supporting actors invoked synchronously by the backend during the
+    interview and scoring flows.
+\end{itemize}
+
+\subsection{Functional Requirements}
+
+Functional requirements are organised by epic; each line is uniquely
+identified so that traceability with the use-case model, the product
+backlog and the test plan can be enforced.
+
+\begin{table}[!htbp]
+    \centering
+    {\renewcommand{\arraystretch}{0.95}%
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{|l|l|p{9cm}|}
+        \hline
+        \textbf{ID} & \textbf{Epic} & \textbf{Requirement} \\
+        \hline
+        FR-01 & JD authoring & Generate a culture-aware JD from a short brief. \\
+        FR-02 & JD authoring & Retrieve a relevant subgraph from the talent knowledge graph (Graph RAG). \\
+        FR-03 & JD authoring & Allow the recruiter to edit and validate the draft. \\
+        \hline
+        FR-04 & Matching & Parse uploaded CVs into a structured skill profile. \\
+        FR-05 & Matching & Rank candidates against a JD using a deep \acs{GNN} matcher. \\
+        FR-06 & Matching & Display per-candidate evidence supporting each rank. \\
+        \hline
+        FR-07 & Interview & Conduct a voice-driven adaptive interview grounded in the CV. \\
+        FR-08 & Interview & Render a Three.js avatar with lip-synced speech. \\
+        FR-09 & Interview & Choose between follow-up and topic-switch based on answer depth. \\
+        \hline
+        FR-10 & Behavioural analysis & Capture face, pose and audio features in real time. \\
+        FR-11 & Behavioural analysis & Fuse multimodal features into the four behavioural signals. \\
+        \hline
+        FR-12 & Scoring & Produce a per-dimension scoring report with an explanation paragraph. \\
+        FR-13 & Scoring & Export the report as a downloadable PDF. \\
+        \hline
+        FR-14 & Personalisation & Learn a per-recruiter taste model from historical decisions. \\
+        FR-15 & Personalisation & Surface the taste signal alongside the central recommendation. \\
+        \hline
+    \end{tabular}%
+    }}
+    \caption{Functional requirements traced by epic.}
+    \label{tab:functional-requirements}
+\end{table}
+
+\subsection{General Use Case Diagram}
+
+The diagram in Figure~\ref{fig:global-usecase} summarises the actors
+and the high-level capabilities they exercise, together with the
+behavioural-signal capture that is factored out as an included
+use case.
+
+\begin{figure}[H]
+    \centering
+    \makebox[\textwidth][c]{\resizebox{1.32\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\small,
+        usecase/.style={ellipse, draw=black!70, thick, fill=blue!8,
+            minimum width=3.6cm, minimum height=0.9cm, align=center,
+            font=\small, inner sep=3pt},
+        actorname/.style={align=center, font=\small\bfseries},
+        link/.style={thick, black!70},
+        dashedlink/.style={thick, dashed, black!60}
+    ]
+        % System boundary
+        \draw[thick, black!50, rounded corners=4pt]
+            (-7.2, -5.8) rectangle (7.2, 5.2);
+        \node[font=\bfseries\large, fill=white, inner xsep=12pt,
+              inner ysep=2pt]
+            at (0, 5.2) {HireFlow};
+
+        % Recruiter (left)
+        \begin{scope}[shift={(-8.8, 1.0)}]
+            \draw[thick] (0, 1.0) circle (0.3);
+            \draw[thick] (0, 0.7) -- (0, -0.3);
+            \draw[thick] (-0.55, 0.35) -- (0.55, 0.35);
+            \draw[thick] (-0.45, -1.0) -- (0, -0.3) -- (0.45, -1.0);
+            \node[actorname] at (0, -1.45) {Recruiter};
+        \end{scope}
+
+        % Candidate (right)
+        \begin{scope}[shift={(8.8, 1.0)}]
+            \draw[thick] (0, 1.0) circle (0.3);
+            \draw[thick] (0, 0.7) -- (0, -0.3);
+            \draw[thick] (-0.55, 0.35) -- (0.55, 0.35);
+            \draw[thick] (-0.45, -1.0) -- (0, -0.3) -- (0.45, -1.0);
+            \node[actorname] at (0, -1.45) {Candidate};
+        \end{scope}
+
+        % Recruiter use cases
+        \node[usecase] (uc1) at (-3.8, 4.0)  {Author Job\\Description};
+        \node[usecase] (uc2) at (-3.8, 2.3)  {Validate\\Shortlist};
+        \node[usecase] (uc3) at (-3.8, 0.6)  {Launch\\Interview};
+        \node[usecase] (uc4) at (-3.8, -1.1) {Review\\Scoring Report};
+        \node[usecase] (uc5) at (-3.8, -2.8) {Adjust\\Personalisation};
+
+        % Candidate use cases
+        \node[usecase] (uc6) at (3.8, 4.0)  {Submit\\Application};
+        \node[usecase] (uc7) at (3.8, 2.3)  {Upload CV};
+        \node[usecase] (uc8) at (3.8, 0.6)  {Take Interview};
+        \node[usecase] (uc9) at (3.8, -1.1) {Consult Decision};
+
+        % Shared / included use case
+        \node[usecase, fill=green!10] (uc10) at (0, -4.4)
+            {Stream Behavioural\\Signals};
+
+        % Recruiter links
+        \draw[link] (-8.15, 1.0) -- (uc1.west);
+        \draw[link] (-8.15, 1.0) -- (uc2.west);
+        \draw[link] (-8.15, 1.0) -- (uc3.west);
+        \draw[link] (-8.15, 1.0) -- (uc4.west);
+        \draw[link] (-8.15, 1.0) -- (uc5.west);
+
+        % Candidate links
+        \draw[link] (8.15, 1.0) -- (uc6.east);
+        \draw[link] (8.15, 1.0) -- (uc7.east);
+        \draw[link] (8.15, 1.0) -- (uc8.east);
+        \draw[link] (8.15, 1.0) -- (uc9.east);
+
+        % Include relationships — explicit Bezier paths routed through the
+        % empty central gap between the two UC columns, with horizontal
+        % labels anchored in that gap so they remain readable.
+        \draw[dashedlink, -{Latex}] (uc3.south)
+            .. controls (-1.4, -1.2) and (-1.4, -3.0) ..
+            (uc10.north west);
+        \node[font=\scriptsize\itshape, fill=white, inner sep=2pt,
+              draw=black!30, rounded corners=1.5pt]
+              at (-1.6, -1.2) {«include»};
+        \draw[dashedlink, -{Latex}] (uc8.south)
+            .. controls ( 1.4, -1.2) and ( 1.4, -3.0) ..
+            (uc10.north east);
+        \node[font=\scriptsize\itshape, fill=white, inner sep=2pt,
+              draw=black!30, rounded corners=1.5pt]
+              at ( 1.6, -2.8) {«include»};
+    \end{tikzpicture}%
+    }}
+    \caption{General use-case diagram of HireFlow.}
+    \label{fig:global-usecase}
+\end{figure}
+
+The diagram makes the responsibility split visible. The recruiter
+drives every authoring, evaluation and personalisation activity,
+while the candidate is only exposed to the surfaces strictly needed
+to apply, interview and consult the outcome. The
+\textit{«include»} relationships factor out the behavioural-signal
+capture that both \textit{Launch Interview} and \textit{Take
+Interview} trigger.
+
+\subsection{Non-Functional Requirements}
+
+The non-functional requirements derive from the dual nature of the
+platform: a research-grade multi-agent system that must nevertheless
+behave as a usable product.
+\begin{itemize}
+    \item \textbf{Performance}: end-to-end conversational latency below
+    two seconds per turn; behavioural-signal pipeline running at no
+    less than fifteen frames per second on a single \acs{GPU}.
+    \item \textbf{Scalability}: stateless agent contracts that allow
+    additional model instances to be added behind a load balancer
+    without code changes.
+    \item \textbf{Reliability}: graceful degradation if a single agent
+    fails --- the recruiter must always reach a usable shortlist even
+    when the conversational layer is unavailable.
+    \item \textbf{Observability}: every agent emits structured logs
+    capturing the inputs, the version of the model that produced the
+    decision and the timestamp at which it was emitted.
+    \item \textbf{Usability}: a recruiter with no \acs{AI} background
+    must be able to author a \acs{JD}, launch an interview and read
+    the scoring report without supervision.
+    \item \textbf{Maintainability}: each agent is a self-contained
+    Python package with its own tests and contract so that components
+    can evolve independently.
+    \item \textbf{Portability}: the platform runs on a developer laptop
+    and on a single \acs{GPU} node, without any external orchestrator
+    dependency.
+\end{itemize}
+
+\section{Project Planning with Scrum}
+
+HireFlow was delivered following a Scrum cadence adapted to the
+academic context of an end-of-studies project. The methodology was
+chosen because it accommodates the exploratory nature of multi-agent
+\acs{AI} work --- the precise shape of each agent emerges as data and
+models are explored --- while still imposing the discipline of
+two- to three-week sprints, a written backlog and a demonstrable
+increment at the end of every iteration.
+
+\subsection{Definition of Roles}
+
+The project assigned the three canonical Scrum roles to the actors
+of the internship, with each role mapped to a concrete responsibility
+inside the team.
+
+\begin{table}[!htbp]
+    \centering
+    {\renewcommand{\arraystretch}{1.1}%
+    \begin{tabular}{|l|p{10.5cm}|}
+        \hline
+        \textbf{Role} & \textbf{Responsibility and assignment} \\
+        \hline
+        Product Owner & Owns the product vision, prioritises the backlog
+        and validates each sprint demo. Assigned to the Talan Tunisie
+        Consulting professional supervisor. \\
+        \hline
+        Scrum Master & Facilitates the ceremonies, removes impediments
+        and protects the team's focus. Assigned jointly to the academic
+        supervisor at \acs{ENSI} and the professional mentor at Talan. \\
+        \hline
+        Development Team & Designs, implements and validates each
+        increment. Composed of the \acs{PFE} student acting as a
+        single full-stack \acs{AI} developer. \\
+        \hline
+    \end{tabular}}
+    \caption{Scrum roles and their assignment.}
+    \label{tab:scrum-roles}
+\end{table}
+
+Three ceremonies were observed throughout the internship: a weekly
+sprint review with the Product Owner, a fortnightly sprint planning
+session, and a daily written stand-up logged in the project tracker.
+The Definition of Done required, for every user story, working code
+merged on the main branch, unit tests passing in continuous
+integration, a short demo recording and a paragraph appended to the
+engineering log.
+
+\subsection{Product Backlog}
+
+The product backlog organises the functional requirements of
+Section~3.1.2 into user stories. Each story follows the canonical
+\textit{As a~/ I want~/ so that} template and carries a \acs{MoSCoW}
+priority. Story points are estimated on a Fibonacci scale and
+indicate complexity rather than calendar effort.
+
+\begin{table}[!htbp]
+    \centering
+    {\renewcommand{\arraystretch}{0.95}%
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{|l|l|p{9.5cm}|c|c|}
+        \hline
+        \textbf{ID} & \textbf{Epic} & \textbf{User story} & \textbf{Pts} & \textbf{Prio.} \\
+        \hline
+        US-01 & JD authoring & As a recruiter, I want to generate a culture-aware JD from a short brief so that I save authoring time.                                & 8 & M \\
+        US-02 & JD authoring & As a recruiter, I want the agent to consult a talent knowledge graph (Graph RAG) so that the JD reflects the company's skill landscape. & 5 & M \\
+        US-03 & JD authoring & As a recruiter, I want to edit and validate the draft so that I keep control on the final wording.                                      & 2 & M \\
+        \hline
+        US-04 & Matching     & As a recruiter, I want uploaded CVs parsed into a structured skill profile so that matching becomes possible.                            & 5 & M \\
+        US-05 & Matching     & As a recruiter, I want candidates ranked against a JD using a deep GNN matcher so that I focus on the most relevant profiles.            & 8 & M \\
+        US-06 & Matching     & As a recruiter, I want the evidence behind each rank so that I can trust and defend the recommendation.                                  & 3 & M \\
+        \hline
+        US-07 & Interview    & As a candidate, I want a voice-driven adaptive interview so that the conversation feels natural.                                         & 8 & M \\
+        US-08 & Interview    & As a candidate, I want to see a Three.js avatar that lip-syncs the questions so that the exchange is engaging.                           & 5 & S \\
+        US-09 & Interview    & As a recruiter, I want the agent to decide between follow-up and topic-switch so that depth is preserved.                                & 5 & M \\
+        \hline
+        US-10 & Behavioural  & As a recruiter, I want face, pose and audio features captured in real time so that behavioural signals can be computed.                  & 5 & M \\
+        US-11 & Behavioural  & As a recruiter, I want the four behavioural signals fused into a profile so that the scoring report is enriched.                         & 5 & M \\
+        \hline
+        US-12 & Scoring      & As a recruiter, I want a per-dimension scoring report with explanations so that I understand each verdict.                               & 5 & M \\
+        US-13 & Scoring      & As a recruiter, I want to export the report as a PDF so that I can share it with the hiring panel.                                       & 2 & S \\
+        \hline
+        US-14 & Personalisation & As a recruiter, I want a private taste model learned from my decisions so that suggestions adapt to my style.                         & 8 & C \\
+        US-15 & Personalisation & As a recruiter, I want the taste signal displayed next to the central rank so that I keep oversight.                                  & 3 & C \\
+        \hline
+    \end{tabular}%
+    }}
+    \caption{Product backlog (M = Must, S = Should, C = Could).}
+    \label{tab:backlog}
+\end{table}
+
+\subsection{Sprint Planning}
+
+The fifteen stories were grouped into six sprints by thematic
+proximity rather than strict priority order, so that each iteration
+delivered a self-contained increment that the Product Owner could
+demonstrate end-to-end. Two of the sprints --- Sprint~1 and Sprint~4
+--- carry an explicit \acs{CRISP-DM} cycle because they involve a
+modelling experiment whose result feeds the rest of the platform.
+
+\begin{table}[!htbp]
+    \centering
+    {\renewcommand{\arraystretch}{1.1}%
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{|l|p{4.0cm}|c|p{4.4cm}|p{2.6cm}|}
+        \hline
+        \textbf{\#} & \textbf{Theme} & \textbf{Dur.} & \textbf{Stories} & \textbf{Methodology} \\
+        \hline
+        S1 & LLM fine-tuning for the recruiter persona & 3w & US-07, US-09           & Scrum + CRISP-DM \\
+        \hline
+        S2 & Conversational interview                        & 3w & US-07, US-08, US-09    & Scrum \\
+        \hline
+        S3 & Computer-vision component and avatar            & 3w & US-08, US-10, US-11    & Scrum \\
+        \hline
+        S4 & Job matching                                    & 3w & US-04, US-05, US-06    & Scrum + CRISP-DM \\
+        \hline
+        S5 & Culture-aware job description                   & 2w & US-01, US-02, US-03    & Scrum \\
+        \hline
+        S6 & Taste module                                    & 2w & US-14, US-15           & Scrum \\
+        \hline
+    \end{tabular}%
+    }}
+    \caption{Six-sprint roadmap of the HireFlow internship.}
+    \label{tab:sprints}
+\end{table}
+
+The roadmap is deliberately bottom-up. The persona-fine-tuned
+\acs{LLM} produced in Sprint~1 underpins both the conversational
+interview of Sprint~2 and the culture-aware \acs{JD} authoring of
+Sprint~5; the matching back-end built in Sprint~4 is reused by the
+personalisation layer of Sprint~6. This ordering keeps the demos
+incremental and lets each sprint be evaluated against a working
+baseline rather than against a moving target.
+
+\section{Application Architecture}
+
+The platform is built as a single deployable unit that nevertheless
+respects three classical architectural views. Section~3.3.1 fixes
+the \textbf{physical} topology --- which artefacts run on which
+machine, with which protocols. Section~3.3.2 then reads the same
+system through the \textbf{logical} lens of a three-tier web
+application: presentation, business, data. Section~3.3.3 zooms into
+the business tier to expose the \textbf{multi-agent} composition
+that gives HireFlow its specificity.
+
+\subsection{Physical Architecture}
+
+The deployment is intentionally compact: one developer client, one
+\acs{GPU}-equipped server, and one external inference provider for
+fall-back generation. This keeps the platform reproducible on a
+single Lightning AI Studio node, which was the constraint imposed
+by the academic environment.
+
+\begin{figure}[H]
+    \centering
+    \makebox[\textwidth][c]{\resizebox{1.12\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\footnotesize,
+        tier/.style={rectangle, draw=black!75, very thick, rounded corners=6pt,
+            fill=#1, inner sep=10pt},
+        title/.style={font=\footnotesize\bfseries, anchor=north},
+        comp/.style={rectangle, draw=black!60, thick, rounded corners=2pt,
+            fill=white, minimum width=3.6cm, minimum height=0.75cm,
+            align=center, font=\scriptsize, inner sep=3pt},
+        compw/.style={rectangle, draw=black!60, thick, rounded corners=2pt,
+            fill=white, minimum width=8.4cm, minimum height=0.75cm,
+            align=center, font=\scriptsize, inner sep=3pt},
+        sub/.style={rectangle, draw=black!60, thick, rounded corners=2pt,
+            fill=white, minimum width=2.5cm, minimum height=0.95cm,
+            align=center, font=\scriptsize, inner sep=2pt},
+        link/.style={thick, black!75, -{Latex[length=2.4mm]}},
+        dashlink/.style={thick, black!70, -{Latex[length=2.4mm]}, dashed}
+    ]
+        % --- Client tier container ---
+        \draw[tier={blue!5}] (-9.6, 0.0) rectangle (-5.0, 5.6);
+        \node[title] at (-7.3, 5.5) {Client tier};
+        \node[comp] at (-7.3, 4.55) {Chromium browser};
+        \node[comp] at (-7.3, 3.65) {React 18 SPA (Vite)};
+        \node[comp] at (-7.3, 2.75) {Three.js avatar (R3F)};
+        \node[comp] at (-7.3, 1.85) {WebRTC microphone};
+        \node[comp] at (-7.3, 0.95) {Scoring-report viewer};
+
+        % --- Server tier container ---
+        \draw[tier={orange!8}] (-2.6, 0.0) rectangle (9.4, 5.6);
+        \node[title] at (3.4, 5.5) {Server tier (GPU node)};
+        \node[compw] at (3.4, 4.55) {FastAPI gateway (Uvicorn)};
+        \node[compw] at (3.4, 3.55) {LangGraph orchestrator + A2A clients};
+        \node[sub]   at (-1.0, 2.05) {SQLite\\hireflow.db};
+        \node[sub]   at ( 1.9, 2.05) {vLLM};
+        \node[sub]   at ( 4.9, 2.05) {Kokoro TTS\\+ Moonshine};
+        \node[sub]   at ( 7.9, 2.05) {Redis\\(A2A streams)};
+        \node[sub, minimum width=11.6cm] at ( 3.4, 0.85) {Local file directory (CVs / PDF reports)};
+
+        % --- External tier container ---
+        \draw[tier={green!7}] (0.4, -3.4) rectangle (6.4, -0.8);
+        \node[title] at (3.4, -0.9) {External provider};
+        \node[comp] at (3.4, -2.35) {Groq Cloud\\LLM fall-back};
+
+        % Inter-tier links
+        \draw[link]     (-5.0, 2.8) -- node[above, font=\scriptsize] {HTTPS / WSS} (-2.6, 2.8);
+        \draw[dashlink] (3.4, 0.0)  -- node[right, font=\scriptsize] {fall-back} (3.4, -0.8);
+    \end{tikzpicture}%
+    }}
+    \caption{Physical deployment architecture of HireFlow.}
+    \label{fig:physical-arch}
+\end{figure}
+
+The client requires nothing more than a recent browser supporting
+WebGL and WebRTC. All trained weights, the SQLite store and the
+object directory live on the server, which means that no candidate
+data ever leaves the perimeter under normal operation. The dashed
+arrow towards Groq represents a fall-back path used only when the
+local vLLM engine is unavailable; that path is gated behind a
+feature flag so it can be disabled when stricter data-residency
+constraints apply.
+
+\subsection{System Logical Architecture}
+
+Mapped onto the classical three-tier model, the platform's
+responsibilities partition cleanly into a presentation tier, a
+business tier and a data tier. The business tier is itself the
+locus of the multi-agent system that Section~3.3.3 details.
+
+\begin{figure}[H]
+    \centering
+    \makebox[\textwidth][c]{\resizebox{1.12\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\footnotesize,
+        band/.style={rectangle, draw=black!75, very thick, rounded corners=4pt,
+            minimum width=15.2cm, minimum height=#1, inner sep=8pt},
+        sideband/.style={rectangle, draw=black!75, very thick, rounded corners=4pt,
+            fill=black!10, minimum width=2.4cm, minimum height=#1, align=center,
+            font=\footnotesize\bfseries, inner sep=4pt},
+        comp/.style={rectangle, draw=black!60, thick, fill=white,
+            rounded corners=2pt, minimum width=3.0cm, minimum height=0.95cm,
+            align=center, font=\scriptsize, inner sep=3pt},
+        link/.style={thick, black!75, -{Latex[length=2.6mm]}}
+    ]
+        % --- Presentation tier ---
+        \node[sideband=1.6cm] (preslbl) at (-9.0, 4.0)
+            {Presentation\\tier};
+        \node[band=1.6cm, fill=blue!5] (pres) at (0.5, 4.0) {};
+        \node[comp] at (-5.5, 4.0) {React 18 SPA\\(Vite, Tailwind)};
+        \node[comp] at (-1.8, 4.0) {Three.js + R3F\\avatar};
+        \node[comp] at ( 1.8, 4.0) {WebRTC\\audio stream};
+        \node[comp] at ( 5.5, 4.0) {Scoring-report\\viewer};
+
+        % --- Business tier ---
+        \node[sideband=3.6cm] (bizlbl) at (-9.0, 0.5)
+            {Business\\tier};
+        \node[band=3.6cm, fill=orange!8] (biz) at (0.5, 0.5) {};
+        \node[comp] at (-5.5, 1.4) {FastAPI\\gateway};
+        \node[comp] at (-1.8, 1.4) {LangGraph\\orchestrator};
+        \node[comp] at ( 1.8, 1.4) {A2A clients\\(JSON-RPC)};
+        \node[comp] at ( 5.5, 1.4) {structlog\\observability};
+        \node[comp, minimum width=7.0cm] at (-3.8, -0.4) {6 agents (JD, Match, NLP, Vision, Scoring, Recruit)};
+        \node[comp] at ( 1.8, -0.4) {Behavioural-signal\\fuser};
+        \node[comp] at ( 5.5, -0.4) {PDF\\exporter};
+
+        % --- Data tier ---
+        \node[sideband=1.6cm] (datalbl) at (-9.0, -3.0)
+            {Data\\tier};
+        \node[band=1.6cm, fill=green!7] (data) at (0.5, -3.0) {};
+        \node[comp, minimum width=2.4cm] at (-5.6, -3.0) {SQLite\\(\textit{hireflow.db})};
+        \node[comp, minimum width=2.4cm] at (-2.8, -3.0) {Local file\\directory};
+        \node[comp, minimum width=2.4cm] at ( 0.0, -3.0) {Knowledge graph\\(Graph RAG)};
+        \node[comp, minimum width=2.4cm] at ( 2.8, -3.0) {Redis streams\\(A2A pub/sub)};
+        \node[comp, minimum width=2.4cm] at ( 5.6, -3.0) {Hugging Face\\model cache};
+
+        % Tier-to-tier links
+        \draw[link] (-3.0, 3.2) -- (-3.0, 2.4);
+        \draw[link] ( 3.0, 3.2) -- node[right, font=\scriptsize] {HTTP / WS} ( 3.0, 2.4);
+        \draw[link] (-2.8, -1.4) -- (-2.8, -2.2);
+        \draw[link] ( 2.8, -1.4) -- node[right, font=\scriptsize] {ORM / file I/O} ( 2.8, -2.2);
+    \end{tikzpicture}%
+    }}
+    \caption{Three-tier logical architecture of HireFlow.}
+    \label{fig:logical-arch}
+\end{figure}
+
+The presentation tier is a single-page application built with React
+and styled with Tailwind. It hosts a Three.js avatar through React
+Three Fiber and streams the candidate's microphone through WebRTC
+to the backend. The business tier exposes a FastAPI gateway that
+dispatches each call to the relevant agent through a LangGraph
+state machine, with inter-agent traffic carried over Redis streams
+that follow the \acs{A2A} contract. The data tier holds a SQLite
+file for transactional state, a local file directory for binary
+assets, an in-process talent knowledge graph queried by the JD
+agent through Graph \acs{RAG}, and a shared Hugging Face cache for
+model weights.
+
+\subsection{Logical Architecture of the Multi-Agent System}
+
+Inside the business tier, HireFlow follows a hub-and-spoke
+multi-agent pattern. The \textbf{Recruit Agent} acts as the
+orchestrator: it receives the recruiter's intent, decomposes it into
+specialised subtasks and routes each subtask to one of the five
+specialist agents. Communication between agents follows the
+\textbf{\acs{A2A}} protocol over JSON-RPC and is materialised on top
+of Redis streams, while each agent embeds its own models and tools
+(the talent knowledge graph queried through Graph \acs{RAG}, vLLM,
+the \acs{GNN} matcher, MediaPipe, Kokoro \acs{TTS}, Moonshine)
+directly.
+
+\begin{figure}[H]
+    \centering
+    \makebox[\textwidth][c]{\resizebox{1.10\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\footnotesize,
+        orch/.style={rectangle, draw=black!75, very thick, fill=orange!25,
+            rounded corners=6pt, minimum width=4.6cm, minimum height=1.4cm,
+            align=center, font=\footnotesize\bfseries, inner sep=4pt},
+        agent/.style={rectangle, draw=black!70, thick, fill=blue!12,
+            rounded corners=4pt, minimum width=2.8cm, minimum height=1.1cm,
+            align=center, font=\footnotesize\bfseries, inner sep=3pt},
+        tool/.style={rectangle, draw=black!60, thick, fill=green!10,
+            rounded corners=2pt, minimum width=2.8cm, minimum height=1.3cm,
+            align=center, font=\scriptsize, inner sep=2pt},
+        layerband/.style={rectangle, draw=black!55, very thick, dashed,
+            rounded corners=4pt, minimum width=16.6cm, inner sep=4pt},
+        a2a/.style={thick, -{Latex[length=2.6mm]}, black!75},
+        mcp/.style={thick, -{Latex[length=2.6mm]}, black!60, dashed}
+    ]
+        % Background bands for visual grouping (drawn first, behind agents).
+        \node[layerband, minimum height=1.7cm] (agentband) at (0, 0.7)  {};
+        \node[layerband, minimum height=2.0cm] (toolband)  at (0, -2.7) {};
+
+        % Layer captions anchored on the top-left edge of each band so they
+        % stay inside the visible figure area.
+        \node[anchor=west, font=\scriptsize\bfseries\itshape, black!70,
+              fill=white, inner sep=2pt]
+              at ([xshift=8pt, yshift=-2pt]agentband.north west)
+              {Agent layer};
+        \node[anchor=west, font=\scriptsize\bfseries\itshape, black!70,
+              fill=white, inner sep=2pt]
+              at ([xshift=8pt, yshift=-2pt]toolband.north west)
+              {Tool layer};
+
+        % Orchestrator (centred, prominent)
+        \node[orch] (recruit) at (0, 4.0) {Recruit Agent\\\textit{(orchestrator)}};
+        \node[anchor=south, font=\scriptsize\bfseries\itshape, black!70,
+              fill=white, inner sep=2pt]
+              at ([yshift=4pt]recruit.north) {Orchestration};
+
+        % 5 specialist agents — evenly spaced inside the agent band
+        \node[agent] (jd)      at (-7.0, 0.7) {JD Agent};
+        \node[agent] (match)   at (-3.5, 0.7) {Matching Agent};
+        \node[agent] (nlp)     at ( 0.0, 0.7) {NLP Agent};
+        \node[agent] (vision)  at ( 3.5, 0.7) {Vision Agent};
+        \node[agent] (scoring) at ( 7.0, 0.7) {Scoring Agent};
+
+        % Models / local tools — below their owning agent
+        \node[tool] (jdllm) at (-7.0, -2.7) {Knowledge graph\\(Graph RAG)\\+ vLLM};
+        \node[tool] (gnn)   at (-3.5, -2.7) {GNN matcher\\(TAPJFNN)};
+        \node[tool] (vllm)  at ( 0.0, -2.7) {vLLM + Kokoro TTS\\+ Moonshine};
+        \node[tool] (mp)    at ( 3.5, -2.7) {MediaPipe\\+ HSEmotion};
+        \node[tool] (pdf)   at ( 7.0, -2.7) {Groq Cloud\\+ PDF export};
+
+        % A2A links from orchestrator to each agent (fan-out)
+        \draw[a2a] (recruit.south west) to[out=-150, in=90] (jd.north);
+        \draw[a2a] (recruit.south west) to[out=-115, in=90] (match.north);
+        \draw[a2a] (recruit.south)      --                  (nlp.north);
+        \draw[a2a] (recruit.south east) to[out=-65,  in=90] (vision.north);
+        \draw[a2a] (recruit.south east) to[out=-30,  in=90] (scoring.north);
+
+        % Cross-agent A2A: NLP <-> Vision during an interview turn — routed
+        % through the empty space between the agent and tool bands so the
+        % label is clearly readable.
+        \draw[a2a, <->] (nlp.south east) to[out=-30, in=-150]
+            (vision.south west);
+        \node[font=\scriptsize\itshape, fill=white, inner sep=2pt,
+              draw=black!25, rounded corners=1.5pt]
+              at (1.75, -1.1) {A2A (behavioural)};
+
+        % Tool dependency links (agents to local models)
+        \draw[mcp] (jd.south)      -- (jdllm.north);
+        \draw[mcp] (match.south)   -- (gnn.north);
+        \draw[mcp] (nlp.south)     -- (vllm.north);
+        \draw[mcp] (vision.south)  -- (mp.north);
+        \draw[mcp] (scoring.south) -- (pdf.north);
+
+        % Compact legend (above the orchestrator, clear of all agents).
+        \draw[black!50, thick, rounded corners=2pt, fill=white]
+            (-1.6, 5.6) rectangle (1.6, 6.6);
+        \node[anchor=west, font=\scriptsize\bfseries] at (-1.5, 6.45) {Legend};
+        \draw[a2a] (-1.4, 6.00) -- (-0.7, 6.00);
+        \node[anchor=west, font=\scriptsize] at (-0.65, 6.00) {A2A};
+        \draw[mcp] ( 0.2, 6.00) -- ( 0.9, 6.00);
+        \node[anchor=west, font=\scriptsize] at ( 0.95, 6.00) {uses};
+    \end{tikzpicture}%
+    }}
+    \caption{Logical architecture of the HireFlow multi-agent system.}
+    \label{fig:multiagent-arch}
+\end{figure}
+
+The shape of the diagram captures three design intentions. First,
+\textbf{specialisation}: every agent owns a single concern --- JD
+authoring, semantic matching, conversational \acs{NLP}, behavioural
+vision, or scoring --- which keeps prompts compact and weights
+swappable. Second, \textbf{co-located tooling}: each agent embeds
+its own models and runs in-process, so the deployment stays a
+single \acs{GPU} node with no external broker beyond Redis. Third,
+\textbf{lateral communication}: the NLP and Vision agents talk
+directly to each other during an interview turn, because the
+orchestrator does not need to mediate the per-frame stream that
+fuses speech with behavioural cues.
+
+\clearpage
+\section{Work Environment}
+
+This section lists the hardware and software stack that supported
+the implementation, the training experiments and the writing of the
+present report.
+
+\subsection{Hardware Environment}
+
+Two machines were used throughout the internship: a developer
+laptop for everyday coding and report writing, and a Lightning AI
+Studio \acs{GPU} node for training experiments and inference
+benchmarking. Table~\ref{tab:hardware} contrasts their
+specifications.
+
+\begin{table}[H]
+    \centering
+    {\renewcommand{\arraystretch}{1.1}%
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{|l|p{5.5cm}|p{5.5cm}|}
+        \hline
+        \textbf{Component} & \textbf{Developer laptop} & \textbf{Lightning AI Studio} \\
+        \hline
+        CPU              & AMD Ryzen 5 7535HS, 6 cores  & 16 vCPU \\
+        \hline
+        GPU              & NVIDIA RTX 2050, 4~GB VRAM   & NVIDIA RTX 6000 Pro, 96~GB VRAM \\
+        \hline
+        RAM              & 16~GB                        & 32~GB \\
+        \hline
+        Storage          & 512~GB SSD                   & 200~GB persistent volume \\
+        \hline
+        Connectivity     & 100~Mbps                     & 1~Gbps \\
+        \hline
+        Role             & Coding, debugging, report    & Training, inference, demos \\
+        \hline
+    \end{tabular}%
+    }}
+    \caption{Hardware environment used during the internship.}
+    \label{tab:hardware}
+\end{table}
+
+\clearpage
+\subsection{Software Environment}
+
+The software stack is open-source end to end. The choices favour
+mature, well-documented projects with active communities so that the
+platform remains maintainable beyond the duration of the internship.
+Table~\ref{tab:software} groups the tools by responsibility.
+
+\begin{table}[H]
+    \centering
+    {\renewcommand{\arraystretch}{1.05}%
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{|l|p{11.0cm}|}
+        \hline
+        \textbf{Layer} & \textbf{Tools and libraries} \\
+        \hline
+        Operating system   & Ubuntu 22.04 LTS (server), Zorin OS (laptop) \\
+        \hline
+        Languages          & Python 3.11, TypeScript 5, SQL \\
+        \hline
+        Backend            & FastAPI, Uvicorn, Pydantic v2, sqlite3, structlog \\
+        \hline
+        AI/ML              & PyTorch 2, Hugging Face Transformers, PEFT/LoRA,
+                             vLLM, LangGraph \\
+        \hline
+        Voice              & Kokoro TTS, Moonshine, Silero VAD \\
+        \hline
+        Vision             & MediaPipe, OpenCV, HSEmotion, Wav2Vec2 \\
+        \hline
+        Frontend           & React 19, Vite 7, TailwindCSS 4, Three.js, R3F, Drei \\
+        \hline
+        Persistence        & SQLite 3, Redis streams, local file directory \\
+        \hline
+        External APIs      & Groq Cloud (scoring LLM), Hugging Face Hub (weights) \\
+        \hline
+        IDE \& tooling     & Visual Studio Code, Git, GitHub \\
+        \hline
+        Documentation      & \LaTeX{} (TeXLive 2024), draw.io, TikZ \\
+        \hline
+    \end{tabular}%
+    }}
+    \caption{Software environment used during the internship.}
+    \label{tab:software}
+\end{table}
+
+\section*{Conclusion}
+
+This chapter translated HireFlow's high-level objectives into a
+concrete engineering plan. The functional and non-functional
+requirements were enumerated and exposed through a global use-case
+diagram; a Scrum cadence with a fifteen-story product backlog and
+a six-sprint roadmap was framed; and the physical, three-tier
+logical and multi-agent architectures were detailed alongside the
+hardware and software environment that supports them. The next
+chapter reports on the realisation of these models and on the
+experimental validation of each agent.

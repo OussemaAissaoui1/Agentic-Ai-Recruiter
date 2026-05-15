@@ -1,0 +1,39 @@
+torch>=2.1.0
+transformers>=4.35.0
+sentence-transformers>=2.2.0
+datasets>=2.14.0
+scikit-learn>=1.3.0
+numpy>=1.24.0
+tqdm>=4.65.0
+joblib>=1.3.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+pydantic>=2.6.0
+pypdf>=4.0.0
+python-docx>=1.1.0
+torch-geometric>=2.4.0
+accelerate>=0.29.0
+pymupdf>=1.24.0
+
+# ---------------------------------------------------------------------------
+# OCR (PaddleOCR)
+#
+# This file defaults to the CPU build of paddle. For GPU OCR install
+# `requirements-gpu.txt` INSTEAD of these two lines (it pulls
+# paddlepaddle-gpu from the PaddlePaddle index, plus paddleocr 3.x).
+#
+#   pip uninstall -y paddlepaddle paddlepaddle-gpu
+#   pip install -r requirements-gpu.txt          # GPU
+#   # — or —
+#   pip install -r requirements.txt              # CPU only
+#
+# IMPORTANT: do NOT mix paddlepaddle (cpu) and paddlepaddle-gpu in the same
+# env. Always uninstall both before switching builds.
+#
+# Why paddleocr>=3.0: 3.x switched to `device="gpu"` and dropped `use_gpu`,
+# `show_log`, `use_angle_cls`. backend/utils/_ocr_worker.py prefers the 3.x
+# kwargs and falls back to 2.x only when the installed paddleocr is older.
+# ---------------------------------------------------------------------------
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0

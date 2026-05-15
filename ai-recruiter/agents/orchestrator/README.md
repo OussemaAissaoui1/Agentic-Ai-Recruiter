@@ -1,36 +1,35 @@
 # Orchestrator Agent
 
-The central coordination layer implemented as a **LangGraph state machine**.
+Central A2A dispatcher. Today: thin in-process router. Future: LangGraph
+state machine driving the full matching → interview → scoring flow.
 
-## Purpose
+## Routes (`/api/orchestrator`)
 
-- Route incoming interview requests to appropriate specialized agents
-- Manage interview session state and transitions
-- Coordinate multi-agent workflows (e.g., Voice -> NLP -> Avatar pipeline)
-- Handle session lifecycle (start, pause, resume, end)
-- Aggregate agent outputs for final interview flow
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`  | `/health` | Lists registered agents |
+| `GET`  | `/agents` | Returns every agent's card |
+| `POST` | `/dispatch` | Routes an `A2ATask` envelope to its target agent |
 
-## Key Components
+## Dispatcher
 
-| File | Purpose |
-|------|---------|
-| `agent.py` | Main orchestrator agent class with LangGraph graph definition |
-| `state.py` | Interview state schema (TypedDict for LangGraph) |
-| `nodes.py` | Graph nodes for each processing step |
-| `edges.py` | Conditional routing logic between nodes |
-| `tools.py` | Tool definitions for agent dispatch |
-| `agent_card.json` | A2A discovery metadata |
+`POST /api/orchestrator/dispatch` body is an `A2ATask`:
 
-## State Machine Phases
+```json
+{
+  "task_id": "uuid",
+  "sender": "test",
+  "target": "matching",
+  "capability": "rank",
+  "payload": { "job_description": "…", "resumes": [{"id":"a.pdf","text":"…"}] }
+}
+```
 
-1. **GREETING** - Avatar introduces, collects basic info
-2. **QUESTIONING** - NLP generates questions, Voice captures answers
-3. **FOLLOW_UP** - Adaptive follow-ups based on responses
-4. **CLOSING** - Interview wrap-up and next steps
-5. **SCORING** - Final evaluation aggregation
+Response is an `A2ATaskResult` (see `core/contracts/a2a.py`).
 
-## Dependencies
+## Future state machine
 
-- Receives: gRPC from API Gateway
-- Dispatches to: All specialized agents via A2A
-- Publishes: Session events to Message Broker
+Phases: `INTAKE → SCREENING → INVITE → INTERVIEW → SCORING → DECISION`.
+Each phase resolves to A2A tasks against the corresponding agent.
+LangGraph is wired into pyproject deps; the actual graph is not yet
+implemented.

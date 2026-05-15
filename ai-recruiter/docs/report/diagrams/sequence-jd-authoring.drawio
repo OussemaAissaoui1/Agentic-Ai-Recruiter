@@ -1,0 +1,67 @@
+<mxfile host="app.diagrams.net" agent="HireFlow PFE" version="22.0.0">
+  <diagram name="JD Authoring Sequence" id="seq-jd">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="r" value="Recruiter" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="60" y="40" width="100" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="api" value="API Gateway" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="220" y="40" width="120" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch" value="JD Orchestrator" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="380" y="40" width="140" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="arch" value="Talent Archaeologist" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="560" y="40" width="160" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="cult" value="Culture Anthropologist" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="760" y="40" width="170" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="writer" value="Writer" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="970" y="40" width="100" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="fair" value="Fairness Reviewer" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="40" width="160" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="m1" value="POST /jobs/{id}/jd" style="endArrow=block;html=1;edgeStyle=none;" edge="1" parent="1" source="r" target="api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m2" value="orchestrate(job_id)" style="endArrow=block;html=1;edgeStyle=none;" edge="1" parent="1" source="api" target="orch">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="160" as="sourcePoint"/><mxPoint y="160" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m3" value="retrieve past hires + skills" style="endArrow=block;html=1;edgeStyle=none;" edge="1" parent="1" source="orch" target="arch">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="220" as="sourcePoint"/><mxPoint y="220" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m4" value="profiles + patterns" style="endArrow=open;dashed=1;html=1;edgeStyle=none;" edge="1" parent="1" source="arch" target="orch">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="280" as="sourcePoint"/><mxPoint y="280" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m5" value="infer culture brief" style="endArrow=block;html=1;edgeStyle=none;" edge="1" parent="1" source="orch" target="cult">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="340" as="sourcePoint"/><mxPoint y="340" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m6" value="culture vector" style="endArrow=open;dashed=1;html=1;edgeStyle=none;" edge="1" parent="1" source="cult" target="orch">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="400" as="sourcePoint"/><mxPoint y="400" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m7" value="draft JD (evidence)" style="endArrow=block;html=1;edgeStyle=none;" edge="1" parent="1" source="orch" target="writer">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="460" as="sourcePoint"/><mxPoint y="460" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m8" value="draft" style="endArrow=open;dashed=1;html=1;edgeStyle=none;" edge="1" parent="1" source="writer" target="orch">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="520" as="sourcePoint"/><mxPoint y="520" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m9" value="review (bias / compliance)" style="endArrow=block;html=1;edgeStyle=none;" edge="1" parent="1" source="orch" target="fair">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="580" as="sourcePoint"/><mxPoint y="580" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m10" value="approve / veto + revisions" style="endArrow=open;dashed=1;html=1;edgeStyle=none;" edge="1" parent="1" source="fair" target="orch">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="640" as="sourcePoint"/><mxPoint y="640" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m11" value="final JD + evidence" style="endArrow=open;dashed=1;html=1;edgeStyle=none;" edge="1" parent="1" source="orch" target="api">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="700" as="sourcePoint"/><mxPoint y="700" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="m12" value="HITL evidence panel" style="endArrow=open;dashed=1;html=1;edgeStyle=none;" edge="1" parent="1" source="api" target="r">
+          <mxGeometry relative="1" as="geometry"><mxPoint y="760" as="sourcePoint"/><mxPoint y="760" as="targetPoint"/></mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

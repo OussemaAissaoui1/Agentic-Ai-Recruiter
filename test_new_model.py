@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test the new recruiter model: oussema2021/recruiter-persona-llama-3.1-8b-merged-v2
+Test the new recruiter model: oussema2021/fintuned_v3_AiRecruter
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from agent import NLPAgent
 async def test_new_model():
     """Test the new model with scorer and refiner enabled."""
     print("\n" + "="*80)
-    print("🚀 TESTING NEW MODEL: oussema2021/recruiter-persona-llama-3.1-8b-merged-v2")
+    print("🚀 TESTING NEW MODEL: oussema2021/fintuned_v3_AiRecruter")
     print("="*80)
     
     # Check GPU availability
@@ -31,13 +31,13 @@ async def test_new_model():
     
     # Initialize agent with new model
     print("📦 Loading NLP Agent...")
-    print("   • Main Model: oussema2021/recruiter-persona-llama-3.1-8b-merged-v2")
+    print("   • Main Model: oussema2021/fintuned_v3_AiRecruter")
     print("   • Scorer: Qwen/Qwen2.5-1.5B-Instruct (CPU)")
     print("   • Refiner: Qwen/Qwen2.5-1.5B-Instruct (CPU)")
     print()
     
     agent = NLPAgent(
-        model_path="oussema2021/recruiter-persona-llama-3.1-8b-merged-v2",
+        model_path="oussema2021/fintuned_v3_AiRecruter",
         enable_scorer=True,
         scorer_model="Qwen/Qwen2.5-1.5B-Instruct",
         enable_refiner=True,
@@ -64,7 +64,6 @@ Technical Skills:
 - YOLOv8, SAM, NLP, GraphRAG, transformers
 - Docker, Git, AWS
 """
-    
     print("✅ Agent loaded successfully!\n")
     
     # Test 1: Greeting
@@ -151,7 +150,7 @@ Technical Skills:
     print("✅ ALL TESTS COMPLETED!")
     print("="*80)
     print("\n📈 Summary:")
-    print(f"   • Model: oussema2021/recruiter-persona-llama-3.1-8b-merged-v2 ✅")
+    print(f"   • Model: oussema2021/fintuned_v3_AiRecruter ✅")
     print(f"   • Scorer: Enabled ✅")
     print(f"   • Refiner: Enabled ✅")
     print(f"   • Tests Passed: 4/4 ✅")

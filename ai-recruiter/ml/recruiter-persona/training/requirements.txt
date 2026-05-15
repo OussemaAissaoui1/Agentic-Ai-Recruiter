@@ -1,22 +1,64 @@
-# Deep Learning Core (PyTorch 2.4+ recommended for SDPA/Flash Attention 2 native support on 96GB GPUs)
-torch>=2.4.0
+# =============================================================================
+# Recruiter persona fine-tuning — training requirements (v4)
+#
+# Target hardware: NVIDIA RTX PRO 6000 Blackwell (sm_120), 96 GB VRAM
+# Verified against: torch 2.11, transformers 5.7, trl 0.16, peft 0.19,
+#                   datasets 4.8, accelerate 1.13 (Lightning AI default env)
+#
+# Install:
+#   pip install -r requirements.txt
+#
+# Inference-only deps (vllm) are NOT included — see serving/requirements.txt.
+# =============================================================================
 
-# Hugging Face Ecosystem (Updated for Llama 3.1 & QLoRA stability)
+# -----------------------------------------------------------------------------
+# Deep learning core
+#   torch 2.6 is the FLOOR for Blackwell — earlier versions (2.4 / 2.5) lack
+#   sm_120 kernels and will fail with "no kernel image available" on the first
+#   forward pass.
+# -----------------------------------------------------------------------------
+torch>=2.6.0
+numpy>=1.26.0                  # used directly in metrics.py
+
+# -----------------------------------------------------------------------------
+# Hugging Face ecosystem
+#   transformers 5.x renamed `tokenizer=` → `processing_class=` on Trainer.
+#   Our code still passes `tokenizer=`; this emits a deprecation warning but
+#   works through transformers 5.x. Fix in a future SFTConfig migration.
+#
+#   trl 0.16+ moved `dataset_text_field`, `max_seq_length`, `packing` into
+#   SFTConfig. They're still accepted as SFTTrainer kwargs (warning, not error).
+#   When we migrate to SFTConfig the lower bound here goes up.
+# -----------------------------------------------------------------------------
 transformers>=4.44.0
-peft>=0.11.0
 trl>=0.11.0
+peft>=0.11.0
 datasets>=2.20.0
 accelerate>=0.33.0
+huggingface_hub>=0.24.0        # used directly by train.py for gated-model login
 
-# Quantization & Optimization (Ampere/Hopper GPU optimizations)
-bitsandbytes>=0.43.3
+# -----------------------------------------------------------------------------
+# Optional — QLoRA path only
+#   On v4 we're on bf16 LoRA (method: lora) and don't load 4-bit weights, so
+#   bitsandbytes is unused at runtime. But lora_config.py imports
+#   BitsAndBytesConfig from transformers at module top — that import is
+#   safe without bitsandbytes installed (transformers ships the config class
+#   stand-alone). Only install if you flip method back to qlora.
+# -----------------------------------------------------------------------------
+# bitsandbytes>=0.43.3
 
-# (Optional but highly recommended for 4096 context length on A100/H100)
-# flash-attn>=2.6.0  
+# -----------------------------------------------------------------------------
+# Attention backend
+#   We use PyTorch SDPA via attn_implementation="sdpa" in train.py — matches
+#   or exceeds FA2 on Blackwell and avoids the CUDA-toolchain install pain.
+# -----------------------------------------------------------------------------
+# flash-attn>=2.7.0            # uncomment only if benchmarks say it helps
 
-# Tracking & Utilities
+# -----------------------------------------------------------------------------
+# Tracking & misc
+# -----------------------------------------------------------------------------
 sentencepiece>=0.1.99
 protobuf>=3.20.0
-scipy>=1.11.0
 pyyaml>=6.0
 wandb>=0.17.0
+scipy>=1.11.0                  # transitive (HF), kept for reproducibility

@@ -226,6 +226,73 @@ class InterviewStateTracker:
         return False, f"detailed ({analysis.word_count}w, quality={analysis.quality})"
 
     # ------------------------------------------------------------------
+    # Planner-driven decision (LLM agent owns the choice; we apply state)
+    # ------------------------------------------------------------------
+
+    def apply_planner_decision(
+        self,
+        action: str,
+        target_topic: Optional[str],
+    ) -> Tuple[bool, str]:
+        """Apply the InterviewPlanner's chosen action to mutable state.
+
+        The planner LLM has already reasoned about turn count, topic
+        depth, scorer signals, etc. — this method just performs the
+        bookkeeping (topic_depth++, _transition_topic, queue advance) so
+        the rest of the pipeline (`get_instruction`) keeps working.
+
+        Returns `(should_follow_up, reason)` so callers can drop this in
+        place of `should_follow_up()` without further changes.
+        """
+        # Opening turn is always handled deterministically — no analysis
+        # exists yet. Planner won't have been called in that case.
+        if self.turn_count == 0:
+            self.turn_count += 1
+            return False, "opening_turn"
+
+        self.turn_count += 1
+
+        if action == "clarify_previous":
+            return True, "planner:clarify_previous"
+
+        if action == "acknowledge_skip":
+            self._transition_topic()
+            self._advance_queue_to(target_topic)
+            return False, "planner:acknowledge_skip"
+
+        if action in ("move_to_new_topic", "wrap_topic_then_move"):
+            self._transition_topic()
+            self._advance_queue_to(target_topic)
+            return False, f"planner:{action}"
+
+        if action in ("follow_up_same_topic", "ask_for_example", "ask_simpler"):
+            self.topic_depth += 1
+            return True, f"planner:{action}"
+
+        # Unknown action → safe fallback: treat as follow-up.
+        self.topic_depth += 1
+        return True, f"planner:unknown_action:{action}"
+
+    def _advance_queue_to(self, target_topic: Optional[str]) -> None:
+        """Pull the queue forward so the next `_get_next_topic()` call
+        returns `target_topic`. If the planner picked a real topic we
+        skip past anything ahead of it; otherwise we leave the queue
+        alone and let `_get_next_topic()` pick the next one in order."""
+        if not target_topic:
+            return
+        for i in range(self._topic_queue_index, len(self._topic_queue)):
+            if self._topic_queue[i] == target_topic:
+                self._topic_queue_index = i
+                return
+
+    def remaining_topics(self) -> List[str]:
+        """Topics still in the queue and not already covered."""
+        return [
+            t for t in self._topic_queue[self._topic_queue_index:]
+            if t not in self.topics_covered
+        ]
+
+    # ------------------------------------------------------------------
     # Instruction generation
     # ------------------------------------------------------------------
 
@@ -235,6 +302,24 @@ class InterviewStateTracker:
         reason: str,
         analysis: AnswerAnalysis,
     ) -> Optional[str]:
+
+        # Opening turn: handle explicitly so the model never gets None.
+        # An empty instruction + empty history + a strongly-primed system
+        # prompt drives small LLMs into transcript-header mode (e.g.
+        # "**Date:** ... **Interviewer:** Alex"), which the leak detector
+        # silences but the cleaner cannot recover from.
+        if reason == "opening_turn":
+            next_topic = self._get_next_topic()
+            anchor = next_topic or "one of their CV projects"
+            self.set_current_topic(next_topic) if next_topic else None
+            return (
+                "[OPENING TURN. Open with ONE short friendly sentence "
+                "(e.g. \"Hi, great to meet you — thanks for joining.\") "
+                f"then ask ONE specific, focused question about: {anchor}. "
+                "Plain conversational prose only. NO headers, NO bold "
+                "labels like **Date:**/**Location:**/**Interviewer:**, "
+                "NO speaker tags, NO transcript framing. Max ~30 words.]"
+            )
 
         parts = []
 

@@ -44,11 +44,8 @@ TTS Engine (CPU) - Synthesizes speech
     ↓
 Refined Question Delivered
 ```
-
 ---
-
 ## 📈 Before vs After
-
 ### Before
 ```
 Recruiter: "Tell me about the sentiment analysis project."

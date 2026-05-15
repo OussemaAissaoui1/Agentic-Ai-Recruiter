@@ -38,7 +38,7 @@ pip install -r requirements.txt
 
 Ensure the merged model exists at:
 ```
-/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/merged-full
+/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache
 ```
 
 ### Step 3: Start Server
@@ -185,7 +185,7 @@ PORT=8001 ./start_server.sh
 ### Model not found
 ```bash
 # Verify model exists
-ls -la /teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/merged-full/
+ls -la /teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache/
 
 # Update path in agent.py if needed
 ```

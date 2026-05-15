@@ -1,0 +1,80 @@
+<mxfile host="app.diagrams.net" agent="HireFlow PFE" version="22.0.0">
+  <diagram name="ER" id="er">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t-jobs" value="jobs" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="220" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jobs-r1" value="" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;top=0;left=0;bottom=0;right=0;collapsible=0;dropTarget=0;fillColor=none;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fontSize=12;" vertex="1" parent="t-jobs">
+          <mxGeometry y="30" width="220" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jobs-r1-c1" value="PK  id" style="shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;strokeColor=inherit;overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;fontSize=12;" vertex="1" parent="t-jobs-r1">
+          <mxGeometry width="220" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jobs-r2" value="title" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;top=0;left=0;bottom=0;right=0;collapsible=0;dropTarget=0;fillColor=none;fontSize=12;" vertex="1" parent="t-jobs">
+          <mxGeometry y="60" width="220" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jobs-r3" value="department" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;top=0;left=0;bottom=0;right=0;collapsible=0;dropTarget=0;fillColor=none;fontSize=12;" vertex="1" parent="t-jobs">
+          <mxGeometry y="90" width="220" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jobs-r4" value="status" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;top=0;left=0;bottom=0;right=0;collapsible=0;dropTarget=0;fillColor=none;fontSize=12;" vertex="1" parent="t-jobs">
+          <mxGeometry y="120" width="220" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jobs-r5" value="created_at" style="shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;top=0;left=0;bottom=0;right=0;collapsible=0;dropTarget=0;fillColor=none;fontSize=12;" vertex="1" parent="t-jobs">
+          <mxGeometry y="150" width="220" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jds" value="job_descriptions" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="40" width="240" height="210" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-jds-r1" value="PK  id&#10;FK  job_id&#10;content&#10;culture_brief&#10;review_status&#10;approved_by" style="shape=partialRectangle;html=1;whiteSpace=wrap;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="t-jds">
+          <mxGeometry y="30" width="240" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-cands" value="candidates" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="220" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-cands-r1" value="PK  id&#10;name&#10;email&#10;cv_path&#10;embedding (vector)" style="shape=partialRectangle;html=1;whiteSpace=wrap;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="t-cands">
+          <mxGeometry y="30" width="220" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-apps" value="applications" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="320" width="240" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-apps-r1" value="PK  id&#10;FK  candidate_id&#10;FK  job_id&#10;match_score&#10;status&#10;applied_at" style="shape=partialRectangle;html=1;whiteSpace=wrap;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="t-apps">
+          <mxGeometry y="30" width="240" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-ints" value="interviews" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="320" width="240" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-ints-r1" value="PK  id&#10;FK  application_id&#10;transcript&#10;video_path&#10;started_at&#10;ended_at" style="shape=partialRectangle;html=1;whiteSpace=wrap;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="t-ints">
+          <mxGeometry y="30" width="240" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-bp" value="behavioural_profiles" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="580" width="240" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-bp-r1" value="PK  id&#10;FK  interview_id&#10;cognitive_load&#10;arousal&#10;engagement&#10;confidence" style="shape=partialRectangle;html=1;whiteSpace=wrap;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="t-bp">
+          <mxGeometry y="30" width="240" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-sr" value="scoring_reports" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="320" width="200" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-sr-r1" value="PK  id&#10;FK  interview_id&#10;overall_score&#10;recommendation&#10;taste_score&#10;generated_at" style="shape=partialRectangle;html=1;whiteSpace=wrap;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="t-sr">
+          <mxGeometry y="30" width="200" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-rec" value="recruiters" style="shape=table;startSize=30;container=1;collapsible=0;childLayout=tableLayout;fillColor=none;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="40" width="200" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-rec-r1" value="PK  id&#10;name&#10;email&#10;FK  taste_model_id" style="shape=partialRectangle;html=1;whiteSpace=wrap;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="t-rec">
+          <mxGeometry y="30" width="200" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="er1" value="1—1" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="t-jobs" target="t-jds"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er2" value="1—N" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="t-jobs" target="t-apps"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er3" value="1—N" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="t-cands" target="t-apps"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er4" value="1—1" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="t-apps" target="t-ints"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er5" value="1—1" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="t-ints" target="t-bp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er6" value="1—1" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="t-ints" target="t-sr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="er7" value="approves" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="t-rec" target="t-sr"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
