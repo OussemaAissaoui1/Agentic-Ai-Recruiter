@@ -1,0 +1,17 @@
+\babel@toc {english}{}\relax 
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {1.1}{\ignorespaces Pipeline of the proposed platform.}}{7}{figure.caption.10}%
+\contentsline {figure}{\numberline {1.2}{\ignorespaces High-level system architecture of HireFlow.}}{8}{figure.caption.11}%
+\contentsline {figure}{\numberline {1.3}{\ignorespaces Overview of the Scrum framework.}}{9}{figure.caption.12}%
+\contentsline {figure}{\numberline {1.4}{\ignorespaces Overview of the CRISP-DM lifecycle.}}{10}{figure.caption.13}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {2.1}{\ignorespaces Transformer encoder--decoder architecture.}}{15}{figure.caption.14}%
+\contentsline {figure}{\numberline {2.2}{\ignorespaces ReAct thought--action--observation loop.}}{17}{figure.caption.15}%
+\contentsline {figure}{\numberline {2.3}{\ignorespaces TAPJFNN four-level topic-aware hierarchical attention.}}{19}{figure.caption.16}%
+\contentsline {figure}{\numberline {2.4}{\ignorespaces GNN message passing on a bipartite candidate--job graph.}}{20}{figure.caption.17}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {3.1}{\ignorespaces General use-case diagram of HireFlow.}}{25}{figure.caption.19}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Physical deployment architecture of HireFlow.}}{29}{figure.caption.23}%
+\contentsline {figure}{\numberline {3.3}{\ignorespaces Three-tier logical architecture of HireFlow.}}{30}{figure.caption.24}%
+\contentsline {figure}{\numberline {3.4}{\ignorespaces Logical architecture of the HireFlow multi-agent system.}}{31}{figure.caption.25}%
+\addvspace {10\p@ }

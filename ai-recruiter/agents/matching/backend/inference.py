@@ -56,11 +56,19 @@ class RankingPipeline:
 
         tapjfnn_ckpt = os.path.join(CHECKPOINT_DIR, "tapjfnn_best.pt")
         self.tapjfnn: Optional[TAPJFNN] = None
+        self.tapjfnn_load_error: Optional[str] = None
         if os.path.exists(tapjfnn_ckpt) and self.lda_j and self.lda_r:
-            self.tapjfnn = TAPJFNN(encoder=self.encoder).to(self.device)
-            sd = torch.load(tapjfnn_ckpt, map_location=self.device)["state_dict"]
-            self.tapjfnn.load_state_dict(sd, strict=False)
-            self.tapjfnn.eval()
+            try:
+                sd = torch.load(tapjfnn_ckpt, map_location=self.device)["state_dict"]
+                self.tapjfnn = TAPJFNN(encoder=self.encoder).to(self.device)
+                self.tapjfnn.load_state_dict(sd, strict=False)
+                self.tapjfnn.eval()
+            except (RuntimeError, OSError, EOFError, KeyError) as e:
+                # Corrupt or partially-written checkpoint — fall through to the
+                # GNN/cosine path instead of crashing the whole pipeline at init.
+                self.tapjfnn = None
+                self.tapjfnn_load_error = f"{type(e).__name__}: {e}"
+                log.warning("tapjfnn checkpoint failed to load (%s); skipping", self.tapjfnn_load_error)
 
         gnn_ckpt = os.path.join(CHECKPOINT_DIR, "gnn_best.pt")
         self.builder = BipartiteGraphBuilder(
@@ -69,16 +77,22 @@ class RankingPipeline:
         )
         self.gnn: Optional[CandidateJobGNN] = None
         self.gnn_num_classes: int = 2
+        self.gnn_load_error: Optional[str] = None
         if os.path.exists(gnn_ckpt):
-            ck = torch.load(gnn_ckpt, map_location=self.device)
-            self.gnn_num_classes = int(ck.get("num_classes", 2))
-            self.gnn = CandidateJobGNN(
-                node_feat_dim=ck.get("node_feat_dim", self.builder.node_feat_dim),
-                gnn_type=ck.get("gnn_type", GNN_CFG.gnn_type),
-                num_classes=self.gnn_num_classes,
-            ).to(self.device)
-            self.gnn.load_state_dict(ck["state_dict"])
-            self.gnn.eval()
+            try:
+                ck = torch.load(gnn_ckpt, map_location=self.device)
+                self.gnn_num_classes = int(ck.get("num_classes", 2))
+                self.gnn = CandidateJobGNN(
+                    node_feat_dim=ck.get("node_feat_dim", self.builder.node_feat_dim),
+                    gnn_type=ck.get("gnn_type", GNN_CFG.gnn_type),
+                    num_classes=self.gnn_num_classes,
+                ).to(self.device)
+                self.gnn.load_state_dict(ck["state_dict"])
+                self.gnn.eval()
+            except (RuntimeError, OSError, EOFError, KeyError) as e:
+                self.gnn = None
+                self.gnn_load_error = f"{type(e).__name__}: {e}"
+                log.warning("gnn checkpoint failed to load (%s); skipping", self.gnn_load_error)
 
     # ------------------------------------------------------------------
     @torch.no_grad()

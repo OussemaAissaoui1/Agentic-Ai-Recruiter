@@ -1,7 +1,7 @@
 import { useApp } from "@/lib/store";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles, X, Send } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStreamingText } from "@/hooks/useStreamingText";
 
 const PROMPTS = [
@@ -15,6 +15,15 @@ export function CopilotPanel() {
   const { copilotOpen, setCopilotOpen } = useApp();
   const [prompt, setPrompt] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!copilotOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCopilotOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [copilotOpen, setCopilotOpen]);
 
   const reply =
     submitted &&
@@ -30,18 +39,22 @@ export function CopilotPanel() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setCopilotOpen(false)}
-            className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-foreground/40 backdrop-blur-sm"
+            aria-hidden
           />
           <motion.aside
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 320, damping: 36 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI Copilot"
             className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-md flex-col border-l border-border bg-card shadow-2xl"
           >
             <header className="flex items-center justify-between border-b border-border px-5 py-4">
               <div className="flex items-center gap-2">
-                <div className="grid h-8 w-8 place-items-center rounded-lg bg-violet-grad text-white">
+                <div className="grid h-8 w-8 place-items-center rounded-lg bg-violet-grad text-white" aria-hidden>
                   <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
@@ -49,8 +62,12 @@ export function CopilotPanel() {
                   <div className="text-xs text-muted-foreground">Drafts, summaries, outreach</div>
                 </div>
               </div>
-              <button onClick={() => setCopilotOpen(false)} className="rounded-md p-1.5 hover:bg-muted">
-                <X className="h-4 w-4" />
+              <button
+                onClick={() => setCopilotOpen(false)}
+                aria-label="Close Copilot (Esc)"
+                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-md p-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <X className="h-4 w-4" aria-hidden />
               </button>
             </header>
 
@@ -85,20 +102,29 @@ export function CopilotPanel() {
             </div>
 
             <form
-              onSubmit={(e) => { e.preventDefault(); if (prompt.trim()) setSubmitted(prompt.trim()); }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (prompt.trim()) setSubmitted(prompt.trim());
+              }}
               className="flex gap-2 border-t border-border bg-background/60 p-3"
             >
+              <label htmlFor="copilot-prompt" className="sr-only">
+                Ask Copilot
+              </label>
               <input
+                id="copilot-prompt"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Ask anything…"
-                className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent"
+                className="min-h-[40px] flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent"
               />
               <button
                 type="submit"
-                className="grid h-9 w-9 place-items-center rounded-lg bg-violet-grad text-white shadow-glow transition hover:opacity-90"
+                aria-label="Send to Copilot"
+                disabled={!prompt.trim()}
+                className="grid h-10 w-10 place-items-center rounded-lg bg-violet-grad text-white shadow-glow transition hover:opacity-90 disabled:opacity-40"
               >
-                <Send className="h-4 w-4" />
+                <Send className="h-4 w-4" aria-hidden />
               </button>
             </form>
           </motion.aside>

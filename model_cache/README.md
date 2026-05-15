@@ -1,159 +1,199 @@
-# 🎙️ Alex-Tech-Recruiter-v1 (Llama 3.1 8B)
-
-<p align="center">
-  <strong>A fine-tuned Llama 3.1 8B Instruct model that simulates a professional technical recruiter named "Alex" for realistic multi-turn interview roleplay.</strong>
-</p>
-
+---
+library_name: transformers
+tags: []
 ---
 
-## 📋 Model Overview
+# Model Card for Model ID
 
-| Key | Value |
-|---|---|
-| **License** | Llama 3.1 Community License |
-| **Base Model** | `unsloth/llama-3-8b-Instruct-bnb-4bit` |
-| **Finetuning Method** | QLoRA (Quantized Low-Rank Adaptation) via Unsloth |
-| **Language** | English |
-| **Pipeline Tag** | `text-generation` |
+<!-- Provide a quick summary of what the model is/does. -->
 
-### Tags
-`llama-3.1` · `recruiter` · `hr-tech` · `interview-simulation` · `roleplay` · `qlora` · `finetuned`
 
----
 
-## 📖 Model Description
+## Model Details
 
-**Alex-Tech-Recruiter-v3** is a fine-tuned version of Llama 3.1 8B Instruct, designed to simulate a highly realistic, professional technical recruiter named **"Alex."** It specializes in conducting multi-turn voice-style interviews grounded in specific candidate CVs and Job Descriptions (JDs).
+### Model Description
 
-### Model Sources
+<!-- Provide a longer summary of what this model is. -->
 
-| Resource | Link |
-|---|---|
-| **Repository** | [https://huggingface.co/oussema2021/fintuned_v3_AiRecruter] |
-| **Dataset** | [pending owner consent... ] |
-| **Base Model** | [unsloth/llama-3-8b-Instruct-bnb-4bit](https://huggingface.co/unsloth/llama-3-8b-Instruct-bnb-4bit) |
+This is the model card of a 🤗 transformers model that has been pushed on the Hub. This model card has been automatically generated.
 
----
+- **Developed by:** [More Information Needed]
+- **Funded by [optional]:** [More Information Needed]
+- **Shared by [optional]:** [More Information Needed]
+- **Model type:** [More Information Needed]
+- **Language(s) (NLP):** [More Information Needed]
+- **License:** [More Information Needed]
+- **Finetuned from model [optional]:** [More Information Needed]
 
-## 🚀 Uses
+### Model Sources [optional]
+
+<!-- Provide the basic links for the model. -->
+
+- **Repository:** [More Information Needed]
+- **Paper [optional]:** [More Information Needed]
+- **Demo [optional]:** [More Information Needed]
+
+## Uses
+
+<!-- Address questions around how the model is intended to be used, including the foreseeable users of the model and those affected by the model. -->
 
 ### Direct Use
 
-This model is intended for:
+<!-- This section is for the model use without fine-tuning or plugging into a larger ecosystem/app. -->
 
-- **Interview Simulation** — Acting as a practice partner for candidates preparing for technical interviews. Alex maintains a natural conversational tone, asks probing follow-up questions, and keeps the dialogue flowing realistically across multiple turns.
+[More Information Needed]
 
-- **Recruiter Training** — Demonstrating ideal probing techniques and active listening for junior recruiters. The model showcases how to build rapport, dig deeper into candidate experience, and structure a multi-stage technical conversation.
+### Downstream Use [optional]
 
-- **HR Tech Prototyping** — Serving as the core conversational engine for automated screening tools, chatbot-based interview platforms, and recruitment pipeline applications.
+<!-- This section is for the model use when fine-tuned for a task, or when plugged into a larger ecosystem/app -->
+
+[More Information Needed]
 
 ### Out-of-Scope Use
 
-> ⚠️ This model should **not** be used for making hiring decisions autonomously. It is a simulation tool and may hallucinate details not present in the provided context. Always pair it with human oversight in any real-world hiring workflow.
+<!-- This section addresses misuse, malicious use, and uses that the model will not work well for. -->
 
----
+[More Information Needed]
 
-## ⚠️ Bias, Risks, and Limitations
+## Bias, Risks, and Limitations
 
-| Limitation | Description |
-|---|---|
-| **Hallucination** | The model may occasionally hallucinate details if the CV/JD context is missing or ambiguous. Always provide structured, up-to-date context for best results. |
-| **Length Bias** | While trained on full transcripts, extremely long conversations (>20 turns) may see a degradation in context retention. Consider summarizing earlier turns for extended sessions. |
-| **Persona Rigidity** | The model is heavily fine-tuned on the "Alex" persona. Switching to a different persona via system prompt may require additional few-shot examples to override the training. |
+<!-- This section is meant to convey both technical and sociotechnical limitations. -->
 
----
+[More Information Needed]
 
-## 🛠️ How to Get Started
+### Recommendations
 
-### Installation
+<!-- This section is meant to convey recommendations with respect to the bias, risk, and technical limitations. -->
 
-```bash
-pip install unsloth transformers accelerate bitsandbytes
-```
+Users (both direct and downstream) should be made aware of the risks, biases and limitations of the model. More information needed for further recommendations.
 
-### Python Code
+## How to Get Started with the Model
 
-```python
-from unsloth import FastLanguageModel
-import torch
+Use the code below to get started with the model.
 
-# Load the model and tokenizer
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "your-username/alex-tech-recruiter-v1",  # Replace with your HF ID
-    max_seq_length = 4096,
-    dtype = None,
-    load_in_4bit = True,
-)
+[More Information Needed]
 
-# Enable faster inference
-FastLanguageModel.for_inference(model)
+## Training Details
 
-# Define the input data
-candidate_name = "John Doe"
-job_role = "Senior Data Engineer"
-job_description = """
-We are looking for a Senior Data Engineer to build scalable pipelines...
-"""
-candidate_cv = """
-John Doe
-Senior Data Engineer at Google (2020-Present)
-Skills: Python, Spark, Kubernetes...
-Experience: Led migration of legacy data warehouse to BigQuery...
-"""
+### Training Data
 
-# Format the System Prompt
-system_prompt = f"""You are Alex, a warm and professional senior technical recruiter \
-conducting a live voice interview with {candidate_name} for the role of {job_role}.
+<!-- This should link to a Dataset Card, perhaps with a short stub of information on what the training data is all about as well as documentation related to data pre-processing or additional filtering. -->
 
-This is a natural spoken conversation, not a written exchange. Speak as you would in a real interview.
+[More Information Needed]
 
-## Conversation Flow
-**Opening (first turn only):**
-- Greet the candidate warmly.
-- Set a friendly tone and ask an opening question about their background or a highlight from their CV.
+### Training Procedure
 
-**During the interview:**
-- Always acknowledge what the candidate just said before asking your next question.
-- Ask ONE focused follow-up question that digs deeper into their experience.
+<!-- This relates heavily to the Technical Specifications. Content here should link to that section when it is relevant to the training procedure. -->
 
-**Closing:**
-- Wrap up the interview naturally, thank the candidate, and outline next steps.
-"""
+#### Preprocessing [optional]
 
-# Build the conversation messages
-messages = [
-    {"role": "system", "content": system_prompt},
-    {"role": "user", "content": candidate_cv},
-]
+[More Information Needed]
 
-# Generate the first recruiter response
-inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt")
-outputs = model.generate(
-    input_ids=inputs,
-    max_new_tokens=512,
-    temperature=0.7,
-    top_p=0.9,
-    do_sample=True,
-)
-response = tokenizer.decode(outputs[0][inputs.shape[-1]:], skip_special_tokens=True)
-print(response)
-```
 
----
+#### Training Hyperparameters
 
-## 🏗️ Training Details
+- **Training regime:** [More Information Needed] <!--fp32, fp16 mixed precision, bf16 mixed precision, bf16 non-mixed precision, fp16 non-mixed precision, fp8 mixed precision -->
 
-- **Finetuning Method**: QLoRA (Quantized Low-Rank Adaptation)
-- **Framework**: [Unsloth](https://github.com/unslothai/unsloth)
-- **Precision**: 4-bit quantization (BitsAndBytes)
-- **Max Sequence Length**: 4096 tokens
+#### Speeds, Sizes, Times [optional]
 
----
+<!-- This section provides information about throughput, start/end time, checkpoint size if relevant, etc. -->
 
-## 📄 License
+[More Information Needed]
 
-This model is released under the **Llama 3.1 Community License**. Please review the full license terms before using this model in production or commercial applications.
+## Evaluation
 
----
+<!-- This section describes the evaluation protocols and provides the results. -->
 
-*Developed with ❤️ using [] and Hugging Face Transformers.*
+### Testing Data, Factors & Metrics
+
+#### Testing Data
+
+<!-- This should link to a Dataset Card if possible. -->
+
+[More Information Needed]
+
+#### Factors
+
+<!-- These are the things the evaluation is disaggregating by, e.g., subpopulations or domains. -->
+
+[More Information Needed]
+
+#### Metrics
+
+<!-- These are the evaluation metrics being used, ideally with a description of why. -->
+
+[More Information Needed]
+
+### Results
+
+[More Information Needed]
+
+#### Summary
+
+
+
+## Model Examination [optional]
+
+<!-- Relevant interpretability work for the model goes here -->
+
+[More Information Needed]
+
+## Environmental Impact
+
+<!-- Total emissions (in grams of CO2eq) and additional considerations, such as electricity usage, go here. Edit the suggested text below accordingly -->
+
+Carbon emissions can be estimated using the [Machine Learning Impact calculator](https://mlco2.github.io/impact#compute) presented in [Lacoste et al. (2019)](https://arxiv.org/abs/1910.09700).
+
+- **Hardware Type:** [More Information Needed]
+- **Hours used:** [More Information Needed]
+- **Cloud Provider:** [More Information Needed]
+- **Compute Region:** [More Information Needed]
+- **Carbon Emitted:** [More Information Needed]
+
+## Technical Specifications [optional]
+
+### Model Architecture and Objective
+
+[More Information Needed]
+
+### Compute Infrastructure
+
+[More Information Needed]
+
+#### Hardware
+
+[More Information Needed]
+
+#### Software
+
+[More Information Needed]
+
+## Citation [optional]
+
+<!-- If there is a paper or blog post introducing the model, the APA and Bibtex information for that should go in this section. -->
+
+**BibTeX:**
+
+[More Information Needed]
+
+**APA:**
+
+[More Information Needed]
+
+## Glossary [optional]
+
+<!-- If relevant, include terms and calculations in this section that can help readers understand the model or model card. -->
+
+[More Information Needed]
+
+## More Information [optional]
+
+[More Information Needed]
+
+## Model Card Authors [optional]
+
+[More Information Needed]
+
+## Model Card Contact
+
+[More Information Needed]

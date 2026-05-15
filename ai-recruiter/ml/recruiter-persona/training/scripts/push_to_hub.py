@@ -5,7 +5,7 @@ so it can be used for inference and deployment.
 
 Usage:
     python push_to_hub.py
-    python push_to_hub.py --model-dir ../output_v2/recruiter-persona-llama-3.1-8b/merged-full
+    python push_to_hub.py --model-dir ../output_v4/recruiter-persona-llama-3.1-8b/merged-full
 """
 
 import argparse
@@ -23,13 +23,13 @@ def parse_args():
     parser.add_argument(
         "--model-dir",
         type=str,
-        default="../output_v3/recruiter-persona-llama-3.1-8b/merged-full",
+        default="../output_v4/recruiter-persona-llama-3.1-8b/merged-full",
         help="Path to the merged model directory",
     )
     parser.add_argument(
         "--repo-id",
         type=str,
-        default="oussema2021/fintuned_v3_AiRecruter",
+        default="oussema2021/fintuned_v4_AiRecruter",
         help="HuggingFace Hub repository ID (username/model-name)",
     )
     parser.add_argument(
@@ -60,12 +60,15 @@ def main():
         print(f"❌ Error: Model directory does not exist: {model_dir}")
         sys.exit(1)
 
-    required_files = ["config.json", "model.safetensors.index.json"]
-    for file in required_files:
-        if not (model_dir / file).exists():
-            print(f"❌ Error: Required file not found: {file}")
-            print(f"   This doesn't appear to be a valid merged model directory.")
-            sys.exit(1)
+    if not (model_dir / "config.json").exists():
+        print(f"❌ Error: Required file not found: config.json")
+        print(f"   This doesn't appear to be a valid merged model directory.")
+        sys.exit(1)
+    has_sharded = (model_dir / "model.safetensors.index.json").exists()
+    has_single  = (model_dir / "model.safetensors").exists()
+    if not (has_sharded or has_single):
+        print(f"❌ Error: No weights found — expected model.safetensors or model.safetensors.index.json")
+        sys.exit(1)
 
     print(f"\n📋 Configuration:")
     print(f"  Model directory: {model_dir}")

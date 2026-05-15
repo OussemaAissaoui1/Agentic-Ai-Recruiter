@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS applications (
     candidate_email     TEXT,
     cv_text             TEXT,
     cv_filename         TEXT,
+    cv_path             TEXT,
     fit_score           REAL,
     matched_skills_json TEXT DEFAULT '[]',
     missing_skills_json TEXT DEFAULT '[]',
@@ -93,6 +94,43 @@ CREATE INDEX IF NOT EXISTS idx_apps_email  ON applications(candidate_email);
 CREATE INDEX IF NOT EXISTS idx_apps_stage  ON applications(stage);
 CREATE INDEX IF NOT EXISTS idx_notif_user  ON notifications(user_role, user_id);
 CREATE INDEX IF NOT EXISTS idx_int_app     ON interviews(application_id);
+
+-- Recruiter-taste (POC): per-recruiter preference learning. Free-form
+-- recruiter_id (TEXT) — matches the existing notifications.user_id pattern;
+-- there is no users table in this codebase. See agents/recruit/taste/.
+CREATE TABLE IF NOT EXISTS candidate_features (
+    application_id    TEXT NOT NULL,
+    features_version  INTEGER NOT NULL,
+    features_json     TEXT NOT NULL,
+    computed_at       REAL NOT NULL,
+    PRIMARY KEY (application_id, features_version),
+    FOREIGN KEY (application_id) REFERENCES applications(id)
+);
+
+CREATE TABLE IF NOT EXISTS recruiter_decisions (
+    id                      TEXT PRIMARY KEY,
+    recruiter_id            TEXT NOT NULL,
+    application_id          TEXT NOT NULL,
+    features_snapshot_json  TEXT NOT NULL,
+    features_version        INTEGER NOT NULL,
+    decision                TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    dwell_seconds           REAL,
+    notes_text              TEXT,
+    created_at              REAL NOT NULL,
+    FOREIGN KEY (application_id) REFERENCES applications(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_recdec_recruiter ON recruiter_decisions(recruiter_id);
+CREATE INDEX IF NOT EXISTS idx_recdec_app       ON recruiter_decisions(application_id);
+
+CREATE TABLE IF NOT EXISTS recruiter_profiles (
+    recruiter_id      TEXT PRIMARY KEY,
+    weights_json      TEXT NOT NULL,
+    n_decisions       INTEGER NOT NULL DEFAULT 0,
+    confidence_level  TEXT NOT NULL CHECK (confidence_level IN ('cold', 'warming', 'warm')),
+    version           INTEGER NOT NULL DEFAULT 1,
+    updated_at        REAL NOT NULL
+);
 """
 
 
@@ -110,6 +148,17 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     and return it."""
     conn = _connect(db_path)
     conn.executescript(SCHEMA_SQL)
+    # Idempotent column adds for older DBs that pre-date a migration.
+    # SQLite has no `ADD COLUMN IF NOT EXISTS`, so we swallow the duplicate-
+    # column error specifically.
+    for stmt in (
+        "ALTER TABLE applications ADD COLUMN cv_path TEXT",
+    ):
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
     # One-shot data migration: legacy stages 'screening' and 'interview' both
     # meant "recruiter green-lit this candidate for interview". Map both to
     # the canonical 'approved' value. Idempotent: safe to run on every boot.
@@ -142,7 +191,24 @@ def _row_to_application(r: sqlite3.Row) -> Dict[str, Any]:
     d = dict(r)
     d["matched_skills"] = json.loads(d.pop("matched_skills_json") or "[]")
     d["missing_skills"] = json.loads(d.pop("missing_skills_json") or "[]")
+    # cv_path is an absolute filesystem path used by the CV-serving route.
+    # Drop it from public dicts — consumers should fetch the file via the
+    # GET /applications/{id}/cv endpoint instead. The CV route itself uses
+    # get_application_cv_path() below.
+    d.pop("cv_path", None)
     return d
+
+
+def get_application_cv_path(
+    conn: sqlite3.Connection, app_id: str
+) -> Optional[str]:
+    row = conn.execute(
+        "SELECT cv_path FROM applications WHERE id = ?", (app_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    val = row["cv_path"]
+    return str(val) if val else None
 
 
 def _row_to_notification(r: sqlite3.Row) -> Dict[str, Any]:
@@ -304,10 +370,10 @@ def create_application(
     conn.execute(
         """
         INSERT INTO applications (id, job_id, candidate_name, candidate_email,
-                                  cv_text, cv_filename, fit_score,
+                                  cv_text, cv_filename, cv_path, fit_score,
                                   matched_skills_json, missing_skills_json,
                                   stage, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             aid,
@@ -316,6 +382,7 @@ def create_application(
             payload.get("candidate_email"),
             payload.get("cv_text"),
             payload.get("cv_filename"),
+            payload.get("cv_path"),
             payload.get("fit_score"),
             json.dumps(payload.get("matched_skills", []) or []),
             json.dumps(payload.get("missing_skills", []) or []),

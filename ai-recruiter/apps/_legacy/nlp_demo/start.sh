@@ -103,7 +103,7 @@ fi
 # Check model path
 echo ""
 echo "[4/5] Checking model..."
-MODEL_PATH="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/merged-full"
+MODEL_PATH="${NLP_MODEL_PATH:-/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache}"
 if [ -d "$MODEL_PATH" ]; then
     SHARDS=$(ls -1 "$MODEL_PATH"/*.safetensors 2>/dev/null | wc -l)
     echo "    Model found: $SHARDS safetensors shards"

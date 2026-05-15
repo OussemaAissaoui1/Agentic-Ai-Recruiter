@@ -1,100 +1,123 @@
-# Recruiter Persona Fine-tuning Configuration
-# Optimized for L40 24GB GPU on Lightning AI Platform
+# =============================================================================
+# Recruiter Persona Fine-tuning — v4 (production)
+#
+# Target hardware: NVIDIA RTX PRO 6000 Blackwell, 96 GB VRAM, on Lightning AI.
+# Target model:    Llama-3.1-8B-Instruct (right size for persona work — see
+#                  ../README.md for the 8B-vs-70B trade-off rationale).
+#
+# What changed vs v3:
+#   1. Switched from QLoRA → plain bf16 LoRA. We have 96 GB — quantization is
+#      a small but real quality tax we don't need to pay.
+#   2. Effective batch stays at 32 but per-device went 8→16 / grad-accum 4→2,
+#      so wall-clock per step is ~halved.
+#   3. learning_rate 2e-4 → 1e-4. After fixing the multi-turn masking in
+#      train.py, only assistant tokens contribute to loss — the per-token
+#      signal is meaningfully stronger so the old LR over-shoots.
+#   4. lora_dropout 0.05 → 0.10. Closes the train/eval gap that v3 showed
+#      (train 0.26, eval 0.35 stuck flat).
+#   5. eval/save every 50 steps instead of 100 — we want a tight read on the
+#      curve since the masking fix should produce a real downward eval slope.
+#   6. group_by_length disabled — its bucketing interacts unpredictably with
+#      DataCollatorForCompletionOnlyLM's instruction/response masking.
+#   7. num_train_epochs 3 → 2 — early-stop will trim further if it plateaus.
+#   8. Hardware comments now actually match the hardware.
+# =============================================================================
 
-# ============================================================================
-# Model Configuration
-# ============================================================================
-base_model: "meta-llama/Meta-Llama-3.1-8B-Instruct"  # Best for conversational tasks
+# ----------------------------------------------------------------------------
+# Model
+# ----------------------------------------------------------------------------
+base_model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
 
-# Alternative models (uncomment to use):
-# base_model: "mistralai/Mistral-7B-Instruct-v0.3"  # Faster training
-# base_model: "Qwen/Qwen2.5-7B-Instruct"            # Better role-playing
-# base_model: "meta-llama/Llama-3.2-3B-Instruct"    # Quick iteration
+output_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v4/recruiter-persona-llama-3.1-8b"
 
-output_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b"
+# ----------------------------------------------------------------------------
+# Data — v4 cleaned files (run data/preprocess_v4.py to (re)generate).
+# Removes: truncated mid-question samples (221), non-Alex name intros (128),
+# speaker-label leakage (6), and normalizes per-conversation casing.
+# ----------------------------------------------------------------------------
+train_data: "../data/final/recruiter_llama_train_messages_v4.jsonl"
+eval_data:  "../data/final/recruiter_llama_eval_messages_v4.jsonl"
 
-# ============================================================================
-# Data Configuration
-# ============================================================================
-train_data: "../data/final/recruiter_llama_train_messages.jsonl"
-eval_data: "../data/final/recruiter_llama_eval_messages.jsonl"
+# ----------------------------------------------------------------------------
+# Method — plain LoRA on bf16 base. QLoRA block is kept commented for the day
+# you need to fall back to a smaller GPU.
+# ----------------------------------------------------------------------------
+method: "lora"
 
-# ============================================================================
-# Training Method
-# ============================================================================
-method: "qlora"  
+# quantization:                  # QLoRA (only for sub-32GB GPUs)
+#   load_in_4bit: true
+#   bnb_4bit_quant_type: "nf4"
+#   bnb_4bit_compute_dtype: "bfloat16"
+#   bnb_4bit_use_double_quant: true
 
-# QLoRA 4-bit Quantization Settings
-quantization:
-  load_in_4bit: true
-  bnb_4bit_quant_type: "nf4"
-  bnb_4bit_compute_dtype: "bfloat16"
-  bnb_4bit_use_double_quant: true
-
-# ============================================================================
-# LoRA Configuration
-# ============================================================================
+# ----------------------------------------------------------------------------
+# LoRA adapter
+# ----------------------------------------------------------------------------
 lora:
-  r: 32                          # Increased rank for 96GB VRAM capacity
-  lora_alpha: 64                 # Keep alpha ~= 2x rank
-  lora_dropout: 0.05             # Low dropout for conversational tasks
-  target_modules:                # Target all linear layers
-    - "q_proj"
-    - "k_proj"
-    - "v_proj"
-    - "o_proj"
-    - "gate_proj"
-    - "up_proj"
-    - "down_proj"
+  r: 32
+  lora_alpha: 32                 # alpha = r → effective LR scaling of 1
+                                 # (alpha = 2r over-amplifies once masking is fixed)
+  lora_dropout: 0.10             # Bumped from 0.05 to close train/eval gap
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
   bias: "none"
   task_type: "CAUSAL_LM"
 
-# ============================================================================
-# Training Hyperparameters
-# ============================================================================
+# ----------------------------------------------------------------------------
+# Training hyperparameters
+# ----------------------------------------------------------------------------
 training:
-  # Learning & Optimization
-  learning_rate: 2.0e-4          # 2e-4 optimal for conversational tasks
-  lr_scheduler_type: "cosine"    # Smooth decay
-  warmup_ratio: 0.10             # 10% warmup is healthier for adapting persona logic
+  # Learning & optimization
+  learning_rate: 1.0e-4          # Halved from v3 — see header note
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.05             # Tighter — LR target is lower so less ramp needed
   weight_decay: 0.01
-  optim: "paged_adamw_8bit"      # Memory-efficient optimizer
+  optim: "adamw_torch_fused"     # Fused AdamW is fastest on Blackwell; paged_adamw_8bit
+                                 # only matters when QLoRA is active.
+  max_grad_norm: 1.0
 
-  # Batch Configuration
-  per_device_train_batch_size: 8   # Utilizing 96GB VRAM
-  per_device_eval_batch_size: 8    # Utilizing 96GB VRAM
-  gradient_accumulation_steps: 4   # Effective batch size ~= 32 for stability
+  # Batch — effective batch size = 16 × 2 = 32
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 2
 
-  # Training Duration
-  num_train_epochs: 3.0            # 3 epochs is ideal for full-conversation SFT
-  # max_steps: 900                 # Removed max_steps so trainer automatically uses epochs
+  # Duration
+  num_train_epochs: 2.0          # 2 epochs is enough at 7,758 train samples;
+                                 # early-stop will trim if eval plateaus.
 
-  # Sequence Length
-  max_seq_length: 4096             # Scaled up drastically to fit the entire interview context
-  packing: false                   # MUST be false to allow DataCollatorForCompletionOnlyLM to mask properly
+  # Sequence
+  max_seq_length: 4096           # Median conv ~2,400 tokens, max ~30 turns ~7,500
+                                 # → 4,096 covers ~95% of samples; rest truncated.
+  packing: false                 # MUST be false for DataCollatorForCompletionOnlyLM
 
-  # Evaluation & Saving
+  # Evaluation & checkpointing
   eval_strategy: "steps"
-  eval_steps: 100                  # ~2-3 times per epoch (based on 7,758 samples / batch 32 = ~242 steps/epoch)
+  eval_steps: 50                 # Tighter than v3 (100) — read the curve closely
   save_strategy: "steps"
-  save_steps: 100                  # Align with eval_steps
-  save_total_limit: 3              # Keep only 3 best checkpoints
+  save_steps: 50
+  save_total_limit: 3
   load_best_model_at_end: true
   metric_for_best_model: "eval_loss"
   greater_is_better: false
 
-  # Performance Optimizations
-  bf16: true                       # L4 supports bfloat16
-  tf32: true                       # Enable TF32 for faster training
-  fp16: false                      # Use bf16 instead
-  gradient_checkpointing: true     # Keep memory headroom on L4
+  # Precision
+  bf16: true                     # Blackwell native
+  tf32: true
+  fp16: false
+  gradient_checkpointing: true   # Saves ~30% activation memory; cheap on this GPU
   dataloader_num_workers: 4
 
   # Logging
-  logging_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/logs"
-  logging_steps: 25
+  logging_dir: "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v4/recruiter-persona-llama-3.1-8b/logs"
+  logging_steps: 10
   logging_first_step: true
-  report_to: "wandb"               
+  report_to: "wandb"
 
   # Reproducibility
   seed: 42
@@ -102,40 +125,45 @@ training:
 
   # Advanced
   remove_unused_columns: true
-  group_by_length: true           # Improves packing efficiency and throughput
+  group_by_length: false         # Disabled — see header note
   ddp_find_unused_parameters: false
 
-# ============================================================================
-# Inference Configuration 
-# ============================================================================
+# ----------------------------------------------------------------------------
+# Inference defaults (consumed by scripts/test_inference_v2.py and serving)
+# ----------------------------------------------------------------------------
 inference:
-  max_new_tokens: 256
-  temperature: 0.7
+  max_new_tokens: 96             # Alex asks one question, not a paragraph
+  temperature: 0.4               # Lower than v3 (0.7) → more consistent persona
   top_p: 0.9
   top_k: 50
   do_sample: true
-  repetition_penalty: 1.1
+  repetition_penalty: 1.05
 
-# ============================================================================
-# Wandb Configuration 
-# ============================================================================
+# ----------------------------------------------------------------------------
+# Wandb
+# ----------------------------------------------------------------------------
 wandb:
   project: "recruiter-persona-finetuning"
-  name: "llama-3.1-8b-qlora"
+  name: "llama-3.1-8b-lora-v4"
   tags:
-    - "recruiter"
-    - "persona"
-    - "qlora"
-    - "llama-3.1"
-  notes: "Fine-tuning Llama 3.1 8B for recruiter persona using QLoRA on L40 24GB"
+    - recruiter
+    - persona
+    - lora
+    - llama-3.1
+    - v4
+  notes: |
+    v4: multi-turn masking fix (instruction_template added), bf16 LoRA instead of
+    QLoRA, batch 16x2, LR 1e-4, dropout 0.10, 2 epochs, eval every 50 steps.
+
 hardware:
-  gpu: "A100-80G or similar massive GPU"
+  gpu: "NVIDIA RTX PRO 6000 Blackwell"
   vram_gb: 96
-  expected_usage_gb: 40-70
-  expected_training_time_hours: 4-8
+  expected_usage_gb: 40-55
+  expected_training_time_hours: 1.5-2.5
+
+# Expected training metrics — calibrated post-masking-fix.
 expected_metrics:
-  initial_loss: 2.0-2.5
-  final_train_loss: 0.4-0.9
-  final_eval_loss: 0.5-1.0
-  total_steps: 900
- 
+  initial_loss: 1.5-2.5          # Higher than v3 because fewer tokens carry signal
+  final_train_loss: 0.6-1.0
+  final_eval_loss: 0.4-0.7       # Should ACTUALLY descend across epochs now
+  approx_total_steps: 485        # 7758 / 32 * 2 ≈ 485

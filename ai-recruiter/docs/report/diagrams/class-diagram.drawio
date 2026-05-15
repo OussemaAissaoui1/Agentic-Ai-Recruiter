@@ -1,0 +1,65 @@
+<mxfile host="app.diagrams.net" agent="HireFlow PFE" version="22.0.0">
+  <diagram name="Class Diagram" id="class">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="job" value="Job" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=1;swimlaneFillColor=#ffffff;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="200" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="job-attrs" value="- id: UUID&#10;- title: String&#10;- department: String&#10;- status: enum&#10;- created_at: datetime" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fontSize=12;" vertex="1" parent="job">
+          <mxGeometry y="26" width="200" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="jd" value="JobDescription" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=1;swimlaneFillColor=#ffffff;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="320" y="40" width="220" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="jd-attrs" value="- id: UUID&#10;- job_id: FK&#10;- content: Text&#10;- culture_brief: JSON&#10;- review_status: enum&#10;- approved_by: FK" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;spacingRight=4;overflow=hidden;rotatable=0;fontSize=12;" vertex="1" parent="jd">
+          <mxGeometry y="26" width="220" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="cand" value="Candidate" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="200" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="cand-attrs" value="- id: UUID&#10;- name: String&#10;- email: String&#10;- cv_path: String&#10;- embedding: vector(768)" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="cand">
+          <mxGeometry y="26" width="200" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="app" value="Application" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="320" y="280" width="220" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="app-attrs" value="- id: UUID&#10;- candidate_id: FK&#10;- job_id: FK&#10;- match_score: float&#10;- status: enum&#10;- applied_at: datetime" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="app">
+          <mxGeometry y="26" width="220" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="int" value="Interview" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="620" y="280" width="220" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="int-attrs" value="- id: UUID&#10;- application_id: FK&#10;- transcript: Text&#10;- video_path: String&#10;- started_at: datetime&#10;- ended_at: datetime" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="int">
+          <mxGeometry y="26" width="220" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="bp" value="BehaviouralProfile" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="500" width="220" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="bp-attrs" value="- id: UUID&#10;- interview_id: FK&#10;- cognitive_load: float&#10;- arousal: float&#10;- engagement: float&#10;- confidence: float" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="bp">
+          <mxGeometry y="26" width="220" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="sr" value="ScoringReport" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="900" y="280" width="220" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="sr-attrs" value="- id: UUID&#10;- interview_id: FK&#10;- overall_score: float&#10;- recommendation: enum&#10;- taste_score: float&#10;- generated_at: datetime" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="sr">
+          <mxGeometry y="26" width="220" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="rec" value="Recruiter" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="900" y="40" width="200" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="rec-attrs" value="- id: UUID&#10;- name: String&#10;- email: String&#10;- taste_model_id: FK" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;" vertex="1" parent="rec">
+          <mxGeometry y="26" width="200" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1" value="1..*" style="endArrow=open;html=1;startArrow=diamondThin;startSize=14;startFill=0;" edge="1" parent="1" source="job" target="jd"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r2" value="1..*" style="endArrow=open;html=1;" edge="1" parent="1" source="job" target="app"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r3" value="1..*" style="endArrow=open;html=1;" edge="1" parent="1" source="cand" target="app"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r4" value="1..1" style="endArrow=open;html=1;" edge="1" parent="1" source="app" target="int"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r5" value="1..1" style="endArrow=open;html=1;" edge="1" parent="1" source="int" target="bp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r6" value="1..1" style="endArrow=open;html=1;" edge="1" parent="1" source="int" target="sr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r7" value="validates" style="endArrow=open;html=1;" edge="1" parent="1" source="rec" target="sr"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

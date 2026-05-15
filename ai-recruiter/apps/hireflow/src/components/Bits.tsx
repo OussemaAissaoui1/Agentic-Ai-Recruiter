@@ -6,8 +6,8 @@ export function FitBadge({ value, size = "md" }: { value: number; size?: "sm" | 
     : value >= 70 ? "from-violet-400 to-fuchsia-500"
     : value >= 55 ? "from-amber-400 to-orange-500"
     : "from-rose-400 to-red-500";
-  const dim = size === "sm" ? 36 : size === "lg" ? 72 : 52;
-  const stroke = size === "sm" ? 3 : 4;
+  const dim = size === "sm" ? 32 : size === "lg" ? 56 : 44;
+  const stroke = size === "sm" ? 2.5 : size === "lg" ? 3.5 : 3;
   const r = (dim - stroke) / 2;
   const c = 2 * Math.PI * r;
   return (
@@ -29,7 +29,7 @@ export function FitBadge({ value, size = "md" }: { value: number; size?: "sm" | 
           </linearGradient>
         </defs>
       </svg>
-      <div className={`absolute font-mono font-semibold ${size === "sm" ? "text-[10px]" : size === "lg" ? "text-xl" : "text-sm"}`}>
+      <div className={`absolute font-mono font-semibold ${size === "sm" ? "text-[9px]" : size === "lg" ? "text-base" : "text-xs"}`}>
         {value}
       </div>
     </div>

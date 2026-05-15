@@ -1,0 +1,59 @@
+<mxfile host="app.diagrams.net" agent="HireFlow PFE" version="22.0.0">
+  <diagram name="Use Case" id="usecase">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="sys" value="HireFlow Platform" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;verticalAlign=top;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="40" width="540" height="780" as="geometry"/>
+        </mxCell>
+        <mxCell id="actorR" value="Recruiter" style="shape=umlActor;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="220" width="40" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="actorC" value="Candidate" style="shape=umlActor;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="600" width="40" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc1" value="Open Vacancy" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="280" y="80" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc2" value="Review Generated JD" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="500" y="80" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc3" value="Validate Shortlist" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="280" y="180" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc4" value="Launch Interview" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="500" y="180" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc5" value="Review Behavioural Profile" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="280" y="280" width="220" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc6" value="Approve / Reject Candidate" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="520" y="280" width="220" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc7" value="Calibrate Taste Model" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="280" y="380" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc8" value="Audit Hiring Decisions" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="500" y="380" width="220" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc9" value="Submit Application" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="280" y="600" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc10" value="Take AI Interview" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="500" y="600" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" style="endArrow=none;html=1;" edge="1" parent="1" source="actorR" target="uc8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e9" style="endArrow=none;html=1;" edge="1" parent="1" source="actorC" target="uc9"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e10" style="endArrow=none;html=1;" edge="1" parent="1" source="actorC" target="uc10"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

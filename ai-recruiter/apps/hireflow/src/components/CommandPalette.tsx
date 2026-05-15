@@ -1,12 +1,22 @@
 import { useApp } from "@/lib/store";
 import { Command } from "cmdk";
-import { Briefcase, Users, BarChart3, Sparkles, FilePlus, MessageCircle, Sun, Moon } from "lucide-react";
+import {
+  Briefcase,
+  Users,
+  BarChart3,
+  Sparkles,
+  FilePlus,
+  MessageCircle,
+  Sun,
+} from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { JOBS, CANDIDATES } from "@/lib/mock";
+import { useApplications, useJobs } from "@/lib/queries";
 
 export function CommandPalette() {
   const { paletteOpen, setPaletteOpen, toggleTheme, setCopilotOpen } = useApp();
   const nav = useNavigate();
+  const { data: jobs = [] } = useJobs();
+  const { data: apps = [] } = useApplications();
 
   if (!paletteOpen) return null;
 
@@ -15,16 +25,26 @@ export function CommandPalette() {
     nav({ to: path });
   };
 
+  const recentJobs = jobs
+    .filter((j) => j.status === "open")
+    .slice(0, 5);
+  const recentCandidates = [...apps]
+    .sort((a, b) => b.fit_score - a.fit_score)
+    .slice(0, 5);
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-start bg-foreground/20 px-4 pt-[12vh] backdrop-blur-sm"
       onClick={() => setPaletteOpen(false)}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
     >
       <div
         className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <Command>
+        <Command label="Command palette">
           <Command.Input
             autoFocus
             placeholder="Type a command, jump to a candidate, or ask anything…"
@@ -38,10 +58,22 @@ export function CommandPalette() {
               <PItem onSelect={() => go("/app/jobs/new")} icon={<FilePlus className="h-4 w-4" />}>
                 Create new job with AI
               </PItem>
-              <PItem onSelect={() => { setPaletteOpen(false); setCopilotOpen(true); }} icon={<Sparkles className="h-4 w-4" />}>
+              <PItem
+                onSelect={() => {
+                  setPaletteOpen(false);
+                  setCopilotOpen(true);
+                }}
+                icon={<Sparkles className="h-4 w-4" />}
+              >
                 Open AI Copilot
               </PItem>
-              <PItem onSelect={() => { toggleTheme(); setPaletteOpen(false); }} icon={<Sun className="h-4 w-4" />}>
+              <PItem
+                onSelect={() => {
+                  toggleTheme();
+                  setPaletteOpen(false);
+                }}
+                icon={<Sun className="h-4 w-4" />}
+              >
                 Toggle theme
               </PItem>
             </Command.Group>
@@ -51,20 +83,46 @@ export function CommandPalette() {
               <PItem onSelect={() => go("/app/applicants")} icon={<Users className="h-4 w-4" />}>Applicants</PItem>
               <PItem onSelect={() => go("/app/radar")} icon={<Sparkles className="h-4 w-4" />}>Talent Radar</PItem>
             </Command.Group>
-            <Command.Group heading="Jobs" className="px-2 py-1 text-xs text-muted-foreground">
-              {JOBS.slice(0, 4).map((j) => (
-                <PItem key={j.id} onSelect={() => go(`/app/jobs/${j.id}`)} icon={<Briefcase className="h-4 w-4" />}>
-                  {j.title} · <span className="text-muted-foreground">{j.team}</span>
-                </PItem>
-              ))}
-            </Command.Group>
-            <Command.Group heading="Candidates" className="px-2 py-1 text-xs text-muted-foreground">
-              {CANDIDATES.slice(0, 5).map((c) => (
-                <PItem key={c.id} onSelect={() => go(`/app/applicants?c=${c.id}`)} icon={<MessageCircle className="h-4 w-4" />}>
-                  {c.name} · <span className="text-muted-foreground">{c.title}</span>
-                </PItem>
-              ))}
-            </Command.Group>
+            {recentJobs.length > 0 && (
+              <Command.Group heading="Jobs" className="px-2 py-1 text-xs text-muted-foreground">
+                {recentJobs.map((j) => (
+                  <PItem
+                    key={j.id}
+                    onSelect={() => go(`/app/jobs/${j.id}`)}
+                    icon={<Briefcase className="h-4 w-4" />}
+                  >
+                    {j.title}
+                    {j.team && (
+                      <>
+                        {" "}
+                        · <span className="text-muted-foreground">{j.team}</span>
+                      </>
+                    )}
+                  </PItem>
+                ))}
+              </Command.Group>
+            )}
+            {recentCandidates.length > 0 && (
+              <Command.Group
+                heading="Candidates"
+                className="px-2 py-1 text-xs text-muted-foreground"
+              >
+                {recentCandidates.map((c) => (
+                  <PItem
+                    key={c.id}
+                    onSelect={() => go(`/app/applicants?c=${c.id}`)}
+                    icon={<MessageCircle className="h-4 w-4" />}
+                  >
+                    {c.candidate_name || c.candidate_email}
+                    {" "}
+                    ·{" "}
+                    <span className="text-muted-foreground">
+                      fit {Math.round(c.fit_score * 100)}
+                    </span>
+                  </PItem>
+                ))}
+              </Command.Group>
+            )}
           </Command.List>
         </Command>
       </div>
@@ -72,13 +130,23 @@ export function CommandPalette() {
   );
 }
 
-function PItem({ onSelect, icon, children }: { onSelect: () => void; icon: React.ReactNode; children: React.ReactNode }) {
+function PItem({
+  onSelect,
+  icon,
+  children,
+}: {
+  onSelect: () => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <Command.Item
       onSelect={onSelect}
-      className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground aria-selected:bg-accent/15 aria-selected:text-foreground"
+      className="flex min-h-[40px] cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground aria-selected:bg-accent/15 aria-selected:text-foreground"
     >
-      <span className="text-muted-foreground">{icon}</span>
+      <span className="text-muted-foreground" aria-hidden>
+        {icon}
+      </span>
       <span className="flex-1 truncate">{children}</span>
     </Command.Item>
   );

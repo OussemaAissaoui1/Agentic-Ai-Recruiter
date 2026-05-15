@@ -230,6 +230,81 @@
   }
   .scrollbar-hidden::-webkit-scrollbar { display: none; }
   .scrollbar-hidden { scrollbar-width: none; }
+
+  /* ─── Polish utilities ─────────────────────────────────────────────────── */
+
+  /* Cursor-following spotlight: parent sets --mx/--my via onMouseMove. */
+  .spotlight {
+    position: relative;
+    isolation: isolate;
+  }
+  .spotlight::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 220ms ease;
+    background: radial-gradient(
+      400px circle at var(--mx, 50%) var(--my, 50%),
+      oklch(0.7 0.2 295 / 0.18),
+      transparent 60%
+    );
+    z-index: 0;
+  }
+  .spotlight:hover::before { opacity: 1; }
+  .spotlight > * { position: relative; z-index: 1; }
+
+  /* Lift: cards rise + soft shadow on hover. */
+  .lift {
+    transition:
+      transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    will-change: transform;
+  }
+  .lift:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Shimmer skeleton: gradient sweep instead of plain pulse. */
+  @keyframes shimmer-sweep {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .shimmer {
+    background-image: linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--color-muted) 88%, transparent) 0%,
+      color-mix(in oklab, var(--color-foreground) 8%, transparent) 50%,
+      color-mix(in oklab, var(--color-muted) 88%, transparent) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-sweep 1.6s linear infinite;
+  }
+
+  /* Subtle pulsing glow ring used for primary CTAs at rest. */
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 oklch(0.62 0.22 295 / 0); }
+    50%      { box-shadow: 0 0 0 6px oklch(0.62 0.22 295 / 0.18); }
+  }
+  .glow-pulse { animation: glow-pulse 2.6s ease-in-out infinite; }
+
+  /* Button press scale (Tailwind has scale utilities, but want a default). */
+  .press-tight { transition: transform 120ms ease; }
+  .press-tight:active { transform: scale(0.97); }
+
+  /* Hide on reduced motion if any animation classes are applied. */
+  @media (prefers-reduced-motion: reduce) {
+    .shimmer,
+    .glow-pulse,
+    .lift {
+      animation: none !important;
+      transition: none !important;
+    }
+    .lift:hover { transform: none; }
+  }
 }
 
 @font-face {

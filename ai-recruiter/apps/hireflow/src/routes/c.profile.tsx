@@ -51,7 +51,7 @@ function Profile() {
   return (
     <div className="space-y-8">
       <div className="flex items-end justify-between">
-        <h1 className="font-display text-4xl tracking-tight">Your profile</h1>
+        <h1 className="font-display text-3xl tracking-tight">Your profile</h1>
         <button
           onClick={save}
           className="inline-flex items-center gap-2 rounded-full bg-violet-grad px-4 py-2 text-sm font-semibold text-accent-foreground shadow-glow"

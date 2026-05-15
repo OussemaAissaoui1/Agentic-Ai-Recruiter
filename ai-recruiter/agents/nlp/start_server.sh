@@ -185,8 +185,11 @@ LOG_LEVEL="${LOG_LEVEL:-info}"
 # "info" shows request logs. "warning" only shows problems.
 
 # Model configuration
-MODEL_PATH="/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/merged-full"
+MODEL_PATH="${NLP_MODEL_PATH:-/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache}"
 # Absolute path to the fine-tuned merged model.
+# Defaults to model_cache/, which holds the v4 weights pulled from
+# https://huggingface.co/oussema2021/fintuned_v4_AiRecruter. Override via the
+# NLP_MODEL_PATH env var for ad-hoc deployments.
 # This path is checked during startup to fail fast if the model is missing.
 
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"

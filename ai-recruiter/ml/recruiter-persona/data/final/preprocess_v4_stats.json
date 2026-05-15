@@ -1,0 +1,23 @@
+{
+  "train": {
+    "input": 7758,
+    "output": 7403,
+    "keep_rate_pct": 95.42,
+    "reasons": {
+      "kept": 7403,
+      "truncated_at_question": 221,
+      "non_alex_name_intro": 128,
+      "speaker_label_leak": 6
+    }
+  },
+  "eval": {
+    "input": 171,
+    "output": 163,
+    "keep_rate_pct": 95.32,
+    "reasons": {
+      "kept": 163,
+      "non_alex_name_intro": 3,
+      "truncated_at_question": 5
+    }
+  }
+}

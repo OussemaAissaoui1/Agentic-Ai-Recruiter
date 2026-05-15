@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { InterviewReportView } from "@/components/scoring/InterviewReportView";
+import { RecruiterFitPill } from "@/components/recruiter-taste/RecruiterFitPill";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useApplication,
@@ -62,6 +63,12 @@ function ReportPage() {
         <ArrowLeft className="h-4 w-4" />
         Back to applicants
       </Link>
+
+      {application && application.stage !== "applied" && (
+        <div className="mt-4 flex items-center gap-2">
+          <RecruiterFitPill applicationId={applicationId} />
+        </div>
+      )}
 
       <div className="mt-4">
         {interviewsLoading ? (

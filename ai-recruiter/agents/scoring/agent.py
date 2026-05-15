@@ -191,6 +191,7 @@ class ScoringAgent(BaseAgent):
             cv_text=ctx.cv_text,
             jd_text=ctx.jd_text,
             transcript=ctx.transcript,
+            behavior_summary=ctx.behavior_summary,
             concurrency=DEFAULT_CONCURRENCY,
             timeout=DEFAULT_TIMEOUT,
         )

@@ -653,6 +653,20 @@ class VLLMRecruiterEngine:
         c = re.sub(r"<think>.*?</think>", "", c, flags=re.DOTALL)
         c = c.strip()
 
+        # Strip a leading transcript-metadata block of the form:
+        #   "**Date:** July 25, 2024 **Location:** Online ... **Interviewer:** Alex"
+        # Small instruction-tuned models slip into this on the opening turn
+        # (no prior history → fall back to "render an interview header").
+        # The leak-head detector silences live forwarding, but the metadata
+        # still survives the rest of the cleaner because the bolds are inline,
+        # not on their own lines. We strip 1+ chained "**Label:** value" pairs
+        # at the very start of the response.
+        c = re.sub(
+            r"^(?:\s*\*\*\s*[A-Za-z][A-Za-z &/-]{0,30}\s*:\s*\*\*[^*\n]{0,120})+",
+            "",
+            c,
+        ).strip()
+
         # If the model slipped into transcript-roleplay (markdown title or
         # third-person narration intro), recover by finding the first Alex
         # line and using only its utterance — that's the actual recruiter turn.

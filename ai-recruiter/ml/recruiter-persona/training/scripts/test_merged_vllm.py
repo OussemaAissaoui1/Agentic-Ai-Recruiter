@@ -1,16 +1,14 @@
-"""Realtime vLLM interview simulator — TTFT-optimised edition (v3).
+"""Realtime vLLM interview simulator — TTFT-optimised edition (v4).
 
-v3 fixes:
-- Topic depth tracking fixed: short answers never pass as "detailed"
-- Interview termination detection
-- Prevents question repetition via history tracking
-- Better answer depth thresholds
+Loads the v4 merged Alex persona from model_cache/ (pulled from
+https://huggingface.co/oussema2021/fintuned_v4_AiRecruter).
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import random
 import time
 from typing import List, Tuple, Optional, Set
@@ -19,7 +17,10 @@ from typing import List, Tuple, Optional, Set
 # Constants
 # ---------------------------------------------------------------------------
 
-LOCAL_MODEL_PATH = "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/ai-recruiter/ml/recruiter-persona/training/output_v3/recruiter-persona-llama-3.1-8b/merged-full"
+LOCAL_MODEL_PATH = os.environ.get(
+    "NLP_MODEL_PATH",
+    "/teamspace/studios/this_studio/Agentic-Ai-Recruiter/model_cache",
+)
 
 # ---------------------------------------------------------------------------
 # Candidate CV

@@ -41,6 +41,7 @@ if __package__:
     from .interview_state import InterviewStateTracker, AnswerAnalysis
     from .response_scorer import ResponseScorer, ScorerOutput
     from .question_refiner import QuestionRefiner, RefinerOutput
+    from .interview_planner import InterviewPlanner, PlannerDecision, StateSnapshot
     from .tts_engine import TTSEngine, TTSResult, StreamingTTSResult
 else:
     from vllm_engine import (  # type: ignore
@@ -49,6 +50,7 @@ else:
     from interview_state import InterviewStateTracker, AnswerAnalysis  # type: ignore
     from response_scorer import ResponseScorer, ScorerOutput  # type: ignore
     from question_refiner import QuestionRefiner, RefinerOutput  # type: ignore
+    from interview_planner import InterviewPlanner, PlannerDecision, StateSnapshot  # type: ignore
     from tts_engine import TTSEngine, TTSResult, StreamingTTSResult  # type: ignore
 
 # Module-level lock for agent engine initialization
@@ -74,6 +76,7 @@ class QuestionGenerationResponse:
     is_follow_up: bool
     scorer_output: Optional[Dict[str, Any]] = None
     refiner_output: Optional[Dict[str, Any]] = None  # NEW: refinement info
+    planner_output: Optional[Dict[str, Any]] = None  # NEW: agent reasoning for this turn
     # v8: audio is now a StreamingTTSResult (has .to_wav_bytes() and .chunks)
     # Backwards-compatible: single-sentence responses have exactly one chunk
     # and StreamingTTSResult.to_wav_bytes() works the same as TTSResult.to_wav_bytes()
@@ -227,6 +230,9 @@ class NLPAgent:
         scorer_model: str = "Qwen/Qwen2.5-1.5B-Instruct",
         enable_refiner: bool = True,  # NEW: enable question refinement
         refiner_model: str = "Qwen/Qwen2.5-1.5B-Instruct",  # NEW: refiner model
+        enable_planner: bool = True,  # NEW: LLM-driven planner agent owns flow control
+        planner_model: str = "Qwen/Qwen2.5-1.5B-Instruct",
+        planner_share_scorer_model: bool = True,  # reuse scorer weights to save VRAM
         enable_tts: bool = True,
         tts_voice: str = "af_heart",
         auto_cleanup_gpu: bool = True,
@@ -246,15 +252,20 @@ class NLPAgent:
 
         self._scorer: Optional[ResponseScorer] = None
         self._refiner: Optional[QuestionRefiner] = None  # NEW
+        self._planner: Optional[InterviewPlanner] = None  # NEW: agentic flow control
         self._tts: Optional[TTSEngine] = None
         self._enable_scorer = enable_scorer
         self._scorer_model = scorer_model
         self._enable_refiner = enable_refiner  # NEW
         self._refiner_model = refiner_model  # NEW
+        self._enable_planner = enable_planner  # NEW
+        self._planner_model = planner_model  # NEW
+        self._planner_share_scorer = planner_share_scorer_model  # NEW
         self._enable_tts = enable_tts
         self._tts_voice = tts_voice
         self._scorer_loaded = False
         self._refiner_loaded = False  # NEW
+        self._planner_loaded = False  # NEW
         self._tts_loaded = False
 
         self._sessions: Dict[str, InterviewStateTracker] = {}
@@ -290,6 +301,43 @@ class NLPAgent:
                 except Exception as e2:
                     print(f"[agent] Refiner init warning: {e2}")
             self._refiner_loaded = True
+
+        if not self._planner_loaded and self._enable_planner:
+            try:
+                # If we already loaded the scorer model and they're the
+                # same architecture, share the weights to avoid eating
+                # another ~3 GB of CPU/VRAM. The planner's own LLM call
+                # is independent (different prompt, different generation
+                # params) — only the underlying tokenizer + weights are
+                # reused.
+                shared = (
+                    self._planner_share_scorer
+                    and self._scorer is not None
+                    and self._scorer.is_ready
+                    and self._planner_model == self._scorer_model
+                )
+                if shared:
+                    print("[agent] Sharing scorer weights with planner...")
+                    self._planner = InterviewPlanner(autoload=False)
+                    self._planner.attach_shared_model(
+                        tokenizer=self._scorer._tokenizer,
+                        model=self._scorer._model,
+                        device=self._scorer.device,
+                    )
+                else:
+                    print("[agent] Loading planner model on GPU...")
+                    self._planner = InterviewPlanner(
+                        model_name=self._planner_model, device="cuda",
+                    )
+                    if not self._planner.is_ready:
+                        print("[agent] Planner GPU failed, falling back to CPU")
+                        self._planner = InterviewPlanner(
+                            model_name=self._planner_model, device="cpu",
+                        )
+            except Exception as e:
+                print(f"[agent] Planner init warning: {e}")
+                self._planner = None
+            self._planner_loaded = True
 
         if not self._tts_loaded and self._enable_tts:
             try:
@@ -338,6 +386,8 @@ class NLPAgent:
             "scorer_loaded": self._scorer_loaded,
             "refiner_ready": self._refiner.is_ready if self._refiner else False,
             "refiner_loaded": self._refiner_loaded,
+            "planner_ready": self._planner.is_ready if self._planner else False,
+            "planner_loaded": self._planner_loaded,
             "tts_ready": self._tts.is_ready if self._tts else False,
             "tts_loaded": self._tts_loaded,
             "gpu_available": gpu_status.available,
@@ -396,6 +446,83 @@ class NLPAgent:
         for s in stale:
             self.end_session(s)
         return len(stale)
+
+    # ------------------------------------------------------------------
+    # Agentic flow control: planner LLM owns the decision
+    # ------------------------------------------------------------------
+
+    async def _decide_next_action(
+        self,
+        state: InterviewStateTracker,
+        analysis: AnswerAnalysis,
+        scorer_output: Optional[ScorerOutput],
+        conversation_history: List[Tuple[str, str]],
+        latest_answer: str,
+    ) -> Tuple[bool, str, Optional["PlannerDecision"]]:
+        """Decide follow-up vs new-topic for this turn.
+
+        Strategy:
+          1. Skip the planner on the opening turn — there is nothing to
+             reason over yet.
+          2. Otherwise call the planner agent. The planner is the
+             primary decision-maker; the rule engine is the fallback.
+          3. If the planner is unavailable, errors out, or its output
+             can't be used, fall back to `state.should_follow_up()` so
+             the interview never wedges.
+
+        Returns `(should_follow_up, reason, planner_decision_or_None)`.
+        The decision is propagated up so it can be logged and shipped
+        to the frontend for transparency.
+        """
+        if state.turn_count == 0 or not (self._enable_planner and self._planner and self._planner.is_ready):
+            should_follow, reason = state.should_follow_up(analysis)
+            return should_follow, reason, None
+
+        scorer_dict: Dict[str, Any] = (
+            scorer_output.to_dict() if scorer_output and hasattr(scorer_output, "to_dict") else {}
+        )
+        # to_dict() doesn't include knowledge_gaps if missing — fold in
+        # the structured fields the planner expects.
+        scorer_dict.setdefault("quality", analysis.quality)
+        scorer_dict.setdefault("engagement", analysis.engagement)
+        scorer_dict.setdefault("knowledge_level", analysis.knowledge_level)
+        scorer_dict.setdefault("question_focus", analysis.question_focus)
+        scorer_dict.setdefault("knowledge_gaps", analysis.knowledge_gaps)
+        scorer_dict.setdefault("suggested_action", analysis.suggested_action)
+
+        snapshot = StateSnapshot(
+            turn_count=state.turn_count,
+            current_topic=state.current_topic,
+            topic_depth=state.topic_depth,
+            topics_covered=list(state.topics_covered),
+            topics_remaining=state.remaining_topics(),
+            consecutive_vague=state.consecutive_vague,
+            max_followups_per_topic=state.MAX_FOLLOWUPS_PER_TOPIC,
+        )
+
+        try:
+            decision = await self._planner.plan(
+                scorer_analysis=scorer_dict,
+                state=snapshot,
+                latest_answer=latest_answer,
+                conversation_history=conversation_history,
+            )
+        except Exception as e:
+            print(f"   ✗ Planner error: {e} — falling back to rule engine")
+            should_follow, reason = state.should_follow_up(analysis)
+            return should_follow, reason, None
+
+        # If the planner returned the default ("planner_unavailable_default")
+        # it means it couldn't reason — defer to the rule engine.
+        if decision.reasoning == "planner_unavailable_default":
+            should_follow, reason = state.should_follow_up(analysis)
+            return should_follow, reason, None
+
+        should_follow, reason = state.apply_planner_decision(
+            action=decision.action,
+            target_topic=decision.target_topic,
+        )
+        return should_follow, reason, decision
 
     # ------------------------------------------------------------------
     # generate_question — non-streaming path (uses segmented TTS)
@@ -459,9 +586,23 @@ class NLPAgent:
 
             # Build analysis using scorer output
             analysis = state.build_analysis(request.candidate_latest_answer, scorer_output)
-            should_follow, reason = state.should_follow_up(analysis)
+            should_follow, reason, planner_decision = await self._decide_next_action(
+                state=state,
+                analysis=analysis,
+                scorer_output=scorer_output,
+                conversation_history=request.conversation_history,
+                latest_answer=request.candidate_latest_answer,
+            )
             instruction = state.get_instruction(should_follow, reason, analysis)
-            
+
+            if planner_decision is not None:
+                print(f"\n🧭 PLANNER (agent) - chose action in {planner_decision.latency_ms:.0f}ms")
+                print(f"   • Action: {planner_decision.action} (confidence={planner_decision.confidence:.2f})")
+                if planner_decision.target_topic:
+                    print(f"   • Target topic: {planner_decision.target_topic}")
+                if planner_decision.reasoning:
+                    snippet = planner_decision.reasoning[:160]
+                    print(f"   • Reasoning: {snippet}{'...' if len(planner_decision.reasoning) > 160 else ''}")
             print(f"\n📋 DECISION - {reason}")
             print(f"   • Follow-up: {'Yes' if should_follow else 'No (move to new topic)'}")
             if instruction:
@@ -569,6 +710,7 @@ class NLPAgent:
                 is_follow_up=should_follow,
                 scorer_output=scorer_output.to_dict() if scorer_output and hasattr(scorer_output, "to_dict") else None,
                 refiner_output=refiner_output.to_dict() if refiner_output else None,
+                planner_output=planner_decision.to_dict() if planner_decision else None,
                 audio=audio_result,
             )
 
@@ -598,8 +740,32 @@ class NLPAgent:
             request.session_id, request.candidate_cv, request.job_role
         )
 
-        analysis = state.build_analysis(request.candidate_latest_answer, None)
-        should_follow, reason = state.should_follow_up(analysis)
+        # Run scorer if available so the planner has signal to reason over.
+        # The text-only path historically skipped the scorer to save latency;
+        # we re-enable it when the scorer is loaded so the planner is useful.
+        scorer_output: Optional[ScorerOutput] = None
+        if (
+            self._enable_scorer and self._scorer and self._scorer.is_ready
+            and request.candidate_latest_answer and request.candidate_latest_answer.strip()
+        ):
+            try:
+                scorer_output = await self._scorer.score(
+                    request.candidate_cv,
+                    request.conversation_history,
+                    request.candidate_latest_answer,
+                )
+            except Exception as e:
+                print(f"[agent] scorer error in text-only path: {e}")
+                scorer_output = None
+
+        analysis = state.build_analysis(request.candidate_latest_answer, scorer_output)
+        should_follow, reason, _planner_decision = await self._decide_next_action(
+            state=state,
+            analysis=analysis,
+            scorer_output=scorer_output,
+            conversation_history=request.conversation_history,
+            latest_answer=request.candidate_latest_answer,
+        )
         instruction = state.get_instruction(should_follow, reason, analysis)
 
         # Same head-window gate as generate_question_streaming_with_audio:
@@ -737,12 +903,27 @@ class NLPAgent:
 
         # Build analysis with scorer output
         analysis = state.build_analysis(request.candidate_latest_answer, scorer_output)
-        should_follow, reason = state.should_follow_up(analysis)
-        
+        should_follow, reason, planner_decision = await self._decide_next_action(
+            state=state,
+            analysis=analysis,
+            scorer_output=scorer_output,
+            conversation_history=request.conversation_history,
+            latest_answer=request.candidate_latest_answer,
+        )
+
+        if planner_decision is not None:
+            print(f"\n🧭 PLANNER (agent) - chose action in {planner_decision.latency_ms:.0f}ms")
+            print(f"   • Action: {planner_decision.action} (confidence={planner_decision.confidence:.2f})")
+            if planner_decision.target_topic:
+                print(f"   • Target topic: {planner_decision.target_topic}")
+            if planner_decision.reasoning:
+                snippet = planner_decision.reasoning[:160]
+                print(f"   • Reasoning: {snippet}{'...' if len(planner_decision.reasoning) > 160 else ''}")
+
         # Log decision
         print(f"\n📋 DECISION - {'Follow up' if should_follow else 'Move to new topic'}")
         print(f"   • Reason: {reason}")
-        
+
         instruction = state.get_instruction(should_follow, reason, analysis)
         
         print(f"\n🤖 MAIN LLM - Generating question (streaming)...")

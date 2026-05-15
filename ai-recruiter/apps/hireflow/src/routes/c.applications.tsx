@@ -40,7 +40,7 @@ function Applications() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-display text-4xl tracking-tight">My applications</h1>
+        <h1 className="font-display text-3xl tracking-tight">My applications</h1>
         {!candidateEmail && (
           <p className="mt-1 text-sm text-muted-foreground">
             Tip: complete your <Link to="/c/profile" className="underline">profile</Link> to track your applications across devices.

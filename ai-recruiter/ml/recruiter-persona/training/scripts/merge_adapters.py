@@ -4,11 +4,11 @@ Merges the fine-tuned LoRA adapters from training output with the base model
 to create a single, standalone model that can be deployed or uploaded to HuggingFace Hub.
 
 Usage:
-    # Merge output_v3 final checkpoint (default)
+    # Merge output_v4 final checkpoint (default)
     python merge_adapters.py
 
     # Merge a specific checkpoint
-    python merge_adapters.py --adapter-path ../output_v3/recruiter-persona-llama-3.1-8b/checkpoint-400
+    python merge_adapters.py --adapter-path ../output_v4/recruiter-persona-llama-3.1-8b/checkpoint-400
 
     # Specify custom output directory
     python merge_adapters.py --output-dir ./my-merged-model
@@ -34,8 +34,8 @@ def parse_args():
     parser.add_argument(
         "--adapter-path",
         type=str,
-        default="../output_v3/recruiter-persona-llama-3.1-8b/final",
-        help="Path to the adapter directory (default: output_v3/final)",
+        default="../output_v4/recruiter-persona-llama-3.1-8b/final",
+        help="Path to the adapter directory (default: output_v4/final)",
     )
     parser.add_argument(
         "--base-model",
@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="../output_v3/recruiter-persona-llama-3.1-8b/merged-full",
+        default="../output_v4/recruiter-persona-llama-3.1-8b/merged-full",
         help="Output directory for merged model",
     )
     parser.add_argument(

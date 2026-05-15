@@ -18,13 +18,13 @@ function JobsList() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-4xl tracking-tight">Jobs</h1>
+          <h1 className="font-display text-3xl tracking-tight">Jobs</h1>
           <p className="mt-1 text-muted-foreground">
             {isLoading ? "Loading…" : `${jobs.length} roles, ${open} open`}
           </p>
         </div>
         <Link
-          to="/app/jobs/new"
+          to="/app/explorer"
           className="inline-flex items-center gap-1.5 rounded-full bg-violet-grad px-4 py-2 text-sm font-semibold text-accent-foreground shadow-glow"
         >
           <Sparkles className="h-4 w-4" /> New with AI
@@ -50,7 +50,7 @@ function JobsList() {
           <h3 className="font-display text-xl">No jobs yet.</h3>
           <p className="mt-1 text-sm text-muted-foreground">Create your first role with the AI wizard.</p>
           <Link
-            to="/app/jobs/new"
+            to="/app/explorer"
             className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-violet-grad px-4 py-2 text-sm font-semibold text-accent-foreground shadow-glow"
           >
             <Sparkles className="h-4 w-4" /> Create a job

@@ -103,20 +103,24 @@ async def generate_jd_stream(
 
     try:
         while True:
-            done_task = asyncio.create_task(task)  # alias for select
+            # Wait on either: (a) the runner task finishes, or (b) a new event
+            # arrives in the queue. asyncio.wait accepts Tasks directly — the
+            # earlier version wrapped `task` in another create_task() which
+            # raised "a coroutine was expected, got <Task ...>" because Tasks
+            # are Futures, not coroutines.
             get_task = asyncio.create_task(queue.get())
             done, _ = await asyncio.wait(
-                {done_task, get_task}, return_when=asyncio.FIRST_COMPLETED,
+                {task, get_task}, return_when=asyncio.FIRST_COMPLETED,
             )
             if get_task in done:
                 event = get_task.result()
                 yield event
-                done_task.cancel()
-                if event.get("type") in {"error"}:
+                if event.get("type") == "error":
                     yield {"type": "done"}
                     return
+                # Loop again — runner task is shared across iterations.
             else:
-                # runner finished; flush remaining queue then exit
+                # Runner finished; flush remaining queue then exit.
                 get_task.cancel()
                 while not queue.empty():
                     yield queue.get_nowait()
